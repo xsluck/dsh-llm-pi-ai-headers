@@ -1,0 +1,83 @@
+/**
+		* Row editor for per-provider request headers: one row per header with a
+		* name and a value, mirroring the model-list rows. The draft stays a plain
+		* `{ [name]: value }` object; rows with a blank name are kept while typing
+		* but never committed.
+		*/
+		function HeadersListEditor(props) {
+			const { value, onChange, t, disabled } = props;
+			const [rows, setRows] = (0, react.useState)(() => {
+				const base = typeof value === "object" && value !== null && !Array.isArray(value) ? Object.entries(value) : [];
+				return base.map(([key, val]) => ({ key, value: val }));
+			});
+			const commit = (next) => {
+				setRows(next);
+				const out = {};
+				for (const row of next) if (row.key.trim().length > 0) out[row.key.trim()] = row.value;
+				onChange(Object.keys(out).length === 0 ? void 0 : out);
+			};
+			const patch = (index, next) => commit(rows.map((row, at) => at === index ? { ...row, ...next } : row));
+			const remove = (index) => commit(rows.filter((_row, at) => at !== index));
+			const add = () => commit([...rows, { key: "", value: "" }]);
+			return (0, react_jsx_runtime.jsxs)("section", {
+				className: ModelsSection_module_css_default["modelCatalog"],
+				"aria-label": t("extraHeaders"),
+				children: [
+					(0, react_jsx_runtime.jsxs)("div", {
+						className: ModelsSection_module_css_default["modelListHead"],
+						children: [
+							(0, react_jsx_runtime.jsx)("span", {
+								className: ModelsSection_module_css_default["modelCatalogTitle"],
+								children: t("extraHeaders")
+							}),
+							(0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: ModelsSection_module_css_default["addModelButton"],
+								disabled,
+								onClick: add,
+								children: t("extraHeadersAdd")
+							})
+						]
+					}),
+					rows.length === 0 ? (0, react_jsx_runtime.jsx)("p", {
+						className: ModelsSection_module_css_default["modelEmpty"],
+						children: t("extraHeadersEmpty")
+					}) : null,
+					rows.map((row, index) => (0, react_jsx_runtime.jsxs)("div", {
+						className: ModelsSection_module_css_default["modelEntry"],
+						children: [(0, react_jsx_runtime.jsxs)("div", {
+							className: ModelsSection_module_css_default["modelRow"],
+							children: [
+								(0, react_jsx_runtime.jsx)("input", {
+									className: ModelsSection_module_css_default["input"],
+									type: "text",
+									value: row.key,
+									placeholder: t("extraHeadersKey"),
+									"aria-label": `${t("extraHeadersKey")} ${index + 1}`,
+									disabled,
+									onChange: (event) => { patch(index, { key: event.target.value }); }
+								}),
+								(0, react_jsx_runtime.jsx)("input", {
+									className: ModelsSection_module_css_default["input"],
+									type: "text",
+									value: row.value,
+									placeholder: t("extraHeadersValue"),
+									"aria-label": `${t("extraHeadersValue")} ${index + 1}`,
+									disabled,
+									onChange: (event) => { patch(index, { value: event.target.value }); }
+								}),
+								(0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: `${ModelsSection_module_css_default["iconButton"]} ${ModelsSection_module_css_default["iconButtonDanger"]}`,
+									"aria-label": `${t("removeModel")} ${index + 1}`,
+									title: t("removeModel"),
+									disabled,
+									onClick: () => { remove(index); },
+									children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconTrashOutline16, { size: 14 })
+								})
+							]
+						})]
+					}, index))
+				]
+			});
+		}

@@ -1,0 +1,6 @@
+(0, react_jsx_runtime.jsx)(HeadersListEditor, {
+						value: extraHeaders,
+						onChange: (next) => { setExtraHeaders(next ?? {}); },
+						t,
+						disabled: profileDisabled
+					}),

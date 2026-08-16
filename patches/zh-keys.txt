@@ -1,0 +1,8 @@
+			extraHeaders: "额外请求头",
+			extraHeadersPlaceholder: "JSON 对象：请求头名到值",
+			extraHeadersHint: "这些请求头会合并进发送给该提供方的每个请求。",
+			extraHeadersAdd: "添加请求头",
+			extraHeadersKey: "请求头",
+			extraHeadersValue: "值",
+			extraHeadersEmpty: "暂无自定义请求头。",
+			

@@ -1,0 +1,10 @@
+(0, react_jsx_runtime.jsx)(HeadersListEditor, {
+							value: (0, _deepseek_ai_dsh_client_schema_form.getPath)(draft, ["extraHeaders"]),
+							onChange: (next) => {
+								setDraft((c) => next === void 0
+									? (0, _deepseek_ai_dsh_client_schema_form.deletePath)(c, ["extraHeaders"])
+									: (0, _deepseek_ai_dsh_client_schema_form.setPath)(c, ["extraHeaders"], next));
+							},
+							t,
+							disabled
+						}),
