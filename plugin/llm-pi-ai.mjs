@@ -190,7 +190,13 @@ function modelInfo(provider, model) {
 
 function resolveBaseURL(provider, profile) {
   if (profile.baseURL !== undefined && profile.baseURL.length > 0) return profile.baseURL
-  return CATALOG.find(entry => entry.id === provider)?.baseUrl
+  const entry = CATALOG.find(e => e.id === provider)
+  if (entry?.baseUrl) return entry.baseUrl
+  // Gateway providers (e.g. opencode/zen) carry no provider-level baseUrl;
+  // fall back to the catalog's per-model baseUrl for our wire protocol.
+  return getBuiltinModels(provider)
+    .find(m => m.api === 'openai-completions' && typeof m.baseUrl === 'string' && m.baseUrl.length > 0)
+    ?.baseUrl
 }
 
 function httpErrorCode(status, error) {

@@ -182,7 +182,7 @@ async function patchClient(bundle) {
 async function patchCordis(args) {
   if (args.clientOnly) return
   const srcDir = path.join(args.home, 'profiles', 'web', 'src')
-  if (!(await fs.stat(srcDir).catch(() => null))) fail(`dsh profile dir not found: ${srcDir}`)
+  await fs.mkdir(srcDir, { recursive: true })
   const patchYml = path.join(args.home, 'profiles', 'web', 'cordis.patch.yml')
 
   // --- 1. server plugin file -------------------------------------------------
@@ -199,6 +199,9 @@ async function patchCordis(args) {
   // --- 2. cordis.patch.yml ---------------------------------------------------
   let yml = await fs.readFile(patchYml, 'utf8').catch(() => '')
   yml = yml.replace(/^\uFEFF/, '')
+  // drop empty-list placeholders (`[]` on its own line) so appended items form a valid list
+  yml = yml.replace(/(^|\r?\n)[ \t]*\[[ \t]*\][ \t]*(?=\r?\n|$)/g, '$1')
+  yml = yml.replace(/\s+$/, '')
   const eol = yml.includes('\r\n') ? '\r\n' : '\n'
   const EOL = '\r?\n'
   const insertBlock =
