@@ -8,6 +8,8 @@
 
 - **自定义请求头编辑器**：模型页编辑卡的「额外请求头」区、自定义提供方表单，均改为键值对行编辑器（原官方版只能手填 JSON，且自定义表单根本没有这个入口）
 - **模型发现增强**：目录内提供商（anthropic、opencode 等）「获取可用模型」直接返回官方模型目录（带显示名称）；第三方端点只返回 `id` 时自动派生显示名（`agnes-2.0-flash` → `Agnes 2.0 Flash`）
+- **baseURL 自动回落**：与官方适配器一致，配置文件未写 `baseURL` 时自动使用 pi-ai 目录内置端点（如 `zai-coding-cn` → `https://open.bigmodel.cn/api/coding/paas/v4`），不再抛出 `INVALID_PROFILE`；仅目录外的自定义提供商仍需手填 baseURL
+- **推理等级按模型自动解析**：恢复官方适配器的行为——模型页「推理等级」下拉按各模型在 pi-ai 目录中的能力列出（如 GLM 系列 → 关/极少/低/中/高，`glm-5.2` 额外支持最大；opencode 的 `deepseek-v4-flash-free` → 高/最大），不再所有模型一律只有关/高/最大；请求参数的封箱（`thinking`/`reasoning_effort`/OpenRouter 嵌套对象等）跟随目录的 `compat.thinkingFormat` 与 `thinkingLevelMap` 逐模型生成，`off` 对 zai 格式会真正发送 `thinking: disabled`
 - **恢复「添加提供方」**：官方适配器目录注册缺失导致添加按钮置灰，本插件补齐 37 个目录提供商
 - **移除无用的代理框**：官方适配器从未实现 `proxy` 配置，UI 上的代理输入框是摆设，一并移除
 - 中英双语
@@ -18,7 +20,7 @@
 
 ```bash
 # 方式一：clone 仓库后直接安装
-git clone https://github.com/<your-name>/dsh-llm-pi-ai-headers.git
+git clone https://github.com/xsluck/dsh-llm-pi-ai-headers.git
 cd dsh-llm-pi-ai-headers
 node install.mjs
 

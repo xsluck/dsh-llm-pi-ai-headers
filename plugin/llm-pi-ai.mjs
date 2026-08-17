@@ -39,14 +39,112 @@ const PROTOCOLS = ['openai-completions']
 function supportedProtocols() {
   return PROTOCOLS
 }
-const OFF_REASONING_EFFORT = ReasoningEffortId('off')
-const HIGH_REASONING_EFFORT = ReasoningEffortId('high')
-const MAX_REASONING_EFFORT = ReasoningEffortId('max')
-const REASONING_EFFORTS = [
-  { id: OFF_REASONING_EFFORT, name: 'Off' },
-  { id: HIGH_REASONING_EFFORT, name: 'High' },
-  { id: MAX_REASONING_EFFORT, name: 'Max' },
-]
+/** Every pi-ai thinking level a profile may declare, in escalation order. */
+const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
+
+function catalogModelOf(provider, model) {
+  return getBuiltinModels(provider).find(entry => entry.id === model)
+}
+
+/**
+ * The thinking levels one catalog model actually offers, mirroring
+ * pi-ai's getSupportedThinkingLevels: null-mapped levels are unsupported
+ * and xhigh/max must be mapped explicitly to be offered.
+ */
+function supportedThinkingLevels(catalogModel) {
+  if (catalogModel === undefined || !catalogModel.reasoning) return []
+  const map = catalogModel.thinkingLevelMap
+  return THINKING_LEVELS.filter(level => {
+    const mapped = map?.[level]
+    if (mapped === null) return false
+    if (level === 'xhigh' || level === 'max') return mapped !== undefined
+    return true
+  })
+}
+
+/**
+ * The reasoning capability one model reports to the picker: the levels the
+ * installed catalog says it supports, plus the route default when the model
+ * can take it. A model with no reasoning metadata offers nothing.
+ */
+function reasoningInfo(catalogModel, profileReasoning) {
+  const levels = supportedThinkingLevels(catalogModel)
+  if (levels.length === 0) return {}
+  return {
+    reasoning: {
+      efforts: levels.map(level => ({
+        id: ReasoningEffortId(level),
+        name: level.charAt(0).toUpperCase() + level.slice(1),
+      })),
+      ...profileReasoning !== undefined && levels.includes(profileReasoning)
+        ? { defaultEffort: ReasoningEffortId(profileReasoning) }
+        : {},
+    },
+  }
+}
+
+/**
+ * Wire parameters for one reasoning dispatch, mirroring pi-ai's
+ * openai-completions thinking dispatcher: the catalog's compat.thinkingFormat
+ * decides the envelope (zai/deepseek/openrouter/qwen/...), the model's
+ * thinkingLevelMap rewrites the selected level, and a route pi-ai has never
+ * heard of keeps the plain OpenAI-style reasoning_effort passthrough.
+ */
+function reasoningParams(catalogModel, effort) {
+  const enabled = effort !== undefined && effort !== 'off'
+  if (catalogModel === undefined || !catalogModel.reasoning) {
+    return enabled ? { reasoning_effort: effort } : {}
+  }
+  const compat = catalogModel.compat ?? {}
+  const map = catalogModel.thinkingLevelMap
+  const format = compat.thinkingFormat
+  if (format === 'zai') {
+    const params = enabled
+      ? { thinking: { type: 'enabled', clear_thinking: false } }
+      : { thinking: { type: 'disabled' } }
+    if (enabled && compat.supportsReasoningEffort) {
+      const wire = map?.[effort]
+      if (typeof wire === 'string') params.reasoning_effort = wire
+    }
+    return params
+  }
+  if (format === 'deepseek') {
+    const params = {}
+    if (enabled) params.thinking = { type: 'enabled' }
+    else if (map?.off !== null) params.thinking = { type: 'disabled' }
+    if (enabled && compat.supportsReasoningEffort) params.reasoning_effort = map?.[effort] ?? effort
+    return params
+  }
+  if (format === 'openrouter') {
+    if (enabled) return { reasoning: { effort: map?.[effort] ?? effort } }
+    return map?.off !== null ? { reasoning: { effort: map?.off ?? 'none' } } : {}
+  }
+  if (format === 'qwen') return { enable_thinking: enabled }
+  if (format === 'qwen-chat-template') {
+    return { chat_template_kwargs: { enable_thinking: enabled, preserve_thinking: true } }
+  }
+  if (format === 'ant-ling') {
+    if (!enabled) return {}
+    const wire = map?.[effort]
+    return typeof wire === 'string' ? { reasoning: { effort: wire } } : {}
+  }
+  if (format === 'together') {
+    const params = { reasoning: { enabled } }
+    if (enabled && compat.supportsReasoningEffort) params.reasoning_effort = map?.[effort] ?? effort
+    return params
+  }
+  if (format === 'string-thinking') {
+    if (enabled) return { thinking: map?.[effort] ?? effort }
+    return map?.off !== null ? { thinking: map?.off ?? 'none' } : {}
+  }
+  // No declared format: plain OpenAI-style reasoning_effort.
+  if (enabled) return { reasoning_effort: map?.[effort] ?? effort }
+  if (compat.supportsReasoningEffort) {
+    const offValue = map?.off
+    if (typeof offValue === 'string') return { reasoning_effort: offValue }
+  }
+  return {}
+}
 const CATALOG = builtinProviders()
 const CATALOG_IDS = new Set(CATALOG.map(provider => provider.id))
 const DEFAULT_CONTEXT_WINDOW = 200000
@@ -66,6 +164,7 @@ const profile = z.object({
   api: z.union(supportedProtocols()),
   baseURL: z.string(),
   models: z.array(modelProfile),
+  reasoning: z.union(THINKING_LEVELS),
   headers: z.dict(z.string()),
   extraHeaders: z.dict(z.string()),
   defaultContextWindow: z.number().step(1).min(1),
@@ -87,6 +186,11 @@ function modelInfo(provider, model) {
     ...model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens },
     inputModalities: ['text'],
   }
+}
+
+function resolveBaseURL(provider, profile) {
+  if (profile.baseURL !== undefined && profile.baseURL.length > 0) return profile.baseURL
+  return CATALOG.find(entry => entry.id === provider)?.baseUrl
 }
 
 function httpErrorCode(status, error) {
@@ -143,7 +247,7 @@ function serializeMessages(messages) {
   return wire
 }
 
-function serializeRequest(options) {
+function serializeRequest(options, catalogModel, effort) {
   const messages = []
   if (options.system !== undefined) messages.push({ role: 'system', content: options.system })
   messages.push(...serializeMessages(options.messages))
@@ -151,16 +255,11 @@ function serializeRequest(options) {
     type: 'function',
     function: { name: tool.name, description: tool.description, parameters: tool.parameters },
   }))
-  let reasoningEffort
-  switch (options.reasoningEffort) {
-    case HIGH_REASONING_EFFORT: reasoningEffort = 'high'; break
-    case MAX_REASONING_EFFORT: reasoningEffort = 'max'; break
-  }
   return {
     model: options.model,
     messages,
     stream: true,
-    ...reasoningEffort !== undefined ? { reasoning_effort: reasoningEffort } : {},
+    ...reasoningParams(catalogModel, effort),
     ...tools !== undefined && tools.length > 0 ? { tools } : {},
     ...options.temperature !== undefined ? { temperature: options.temperature } : {},
     ...options.maxTokens === undefined ? {} : { max_tokens: options.maxTokens },
@@ -412,21 +511,33 @@ class PiAiCompatAdapter extends LlmAdapter {
         : modelInfo(provider, configured),
       context: { contextWindow: configured?.contextWindow ?? profile.defaultContextWindow ?? DEFAULT_CONTEXT_WINDOW },
       defaultMaxTokens: configured?.maxTokens ?? profile.defaultMaxTokens ?? DEFAULT_MAX_TOKENS,
-      reasoning: {
-        efforts: REASONING_EFFORTS,
-        defaultEffort: HIGH_REASONING_EFFORT,
-      },
+      ...reasoningInfo(catalogModelOf(provider, model), profile.reasoning),
     })
   }
 
   async *stream(options) {
     const profile = this.config.profiles()[options.provider]
     if (profile === undefined) throw new LlmError(`no provider route "${options.provider}"`, 'NO_ADAPTER')
-    if (profile.baseURL === undefined) throw new LlmError(`provider "${options.provider}" has no baseURL`, 'INVALID_PROFILE')
+    const baseURL = resolveBaseURL(options.provider, profile)
+    if (baseURL === undefined) throw new LlmError(
+      `provider "${options.provider}" has no baseURL; the installed catalog does not describe this route, so set a base URL in this provider's settings`,
+      'INVALID_PROFILE',
+    )
     if (profile.api !== undefined && profile.api !== 'openai-completions') {
       throw new LlmError(`provider "${options.provider}" uses unsupported protocol "${profile.api}"`, 'UNSUPPORTED_PROTOCOL')
     }
     const apiKey = await this.config.resolveApiKey(options.provider, profile)
+    const catalogModel = catalogModelOf(options.provider, options.model)
+    const effort = options.reasoningEffort ?? profile.reasoning
+    if (effort !== undefined) {
+      const levels = supportedThinkingLevels(catalogModel)
+      if (catalogModel !== undefined && !catalogModel.reasoning) {
+        throw new LlmError(`pi-ai provider "${options.provider}" model "${options.model}" is not a reasoning model`, 'UNSUPPORTED_REASONING_EFFORT')
+      }
+      if (levels.length > 0 && !levels.includes(effort)) {
+        throw new LlmError(`pi-ai provider "${options.provider}" model "${options.model}" does not support reasoning effort "${effort}"`, 'UNSUPPORTED_REASONING_EFFORT')
+      }
+    }
     const headers = {
       'content-type': 'application/json',
       'accept': 'text/event-stream',
@@ -435,10 +546,10 @@ class PiAiCompatAdapter extends LlmAdapter {
       ...profile.headers ?? {},
       ...profile.extraHeaders ?? {},
     }
-    const payload = JSON.stringify(serializeRequest(options))
+    const payload = JSON.stringify(serializeRequest(options, catalogModel, effort))
     let response
     try {
-      response = await fetch(`${profile.baseURL}/chat/completions`, {
+      response = await fetch(`${baseURL}/chat/completions`, {
         method: 'POST',
         headers,
         body: payload,
@@ -446,7 +557,7 @@ class PiAiCompatAdapter extends LlmAdapter {
       })
     } catch (error) {
       if (options.signal?.aborted) throw new LlmError(`provider "${options.provider}" request aborted by caller`, 'ABORTED', { cause: error })
-      throw new LlmError(`provider "${options.provider}" API request to ${profile.baseURL} failed`, 'TRANSPORT', { cause: error })
+      throw new LlmError(`provider "${options.provider}" API request to ${baseURL} failed`, 'TRANSPORT', { cause: error })
     }
     if (!response.ok) {
       let message = `provider "${options.provider}" API error (HTTP ${response.status})`
