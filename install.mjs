@@ -121,8 +121,8 @@ async function patchClient(bundle) {
     ['custom-card storesKey line', 'const storesKey = keyValue.length > 0;\n\t\t\t\tif (!committed) {'],
     ['custom-card profile models line', 'models: models.map((model) => ({ ...model }))\n\t\t\t\t\t};'],
     ['custom-card render anchor', 'disabled: profileDisabled\n\t\t\t\t\t}),\n\t\t\t\t\tfailure !== void 0'],
-    ['edit-card proxy label', 'children: t("proxy")'],
-    ['edit-card headers textarea', 'children: t("extraHeaders")\n\t\t\t\t\t\t}), (0, react_jsx_runtime.jsx)("textarea"'],
+    ['edit-card models branch', 'family === "deepseek" ? (0, react_jsx_runtime.jsx)(DeepSeekModelsEditor,'],
+    ['edit-card list close', 'probeBlocked: keyFailure,\n\t\t\t\t\t\t\t\tapi\n\t\t\t\t\t\t\t})\n\t\t\t\t\t\t]'],
   ]
   for (const [name, anchor] of anchors) {
     if (!src.includes(anchor)) fail(`front-end version mismatch: ${name} not found.\n` +
@@ -155,16 +155,15 @@ async function patchClient(bundle) {
   src = src.replace('disabled: profileDisabled\n\t\t\t\t\t}),\n\t\t\t\t\tfailure !== void 0',
     'disabled: profileDisabled\n\t\t\t\t\t}),\n\t\t\t\t\t' + customCall + '\n\t\t\t\t\tfailure !== void 0')
 
-  // 7. edit-card: replace the proxy field + JSON textarea with HeadersListEditor
-  const p = src.indexOf('children: t("proxy")')
-  const q = src.lastIndexOf('(0, react_jsx_runtime.jsxs)("div", {\n\t\t\t\t\t\tclassName: ModelsSection_module_css_default["field"],', p)
-  const r = src.indexOf('children: t("extraHeaders")\n\t\t\t\t\t\t}), (0, react_jsx_runtime.jsx)("textarea"', p)
-  const hint = src.indexOf('children: t("extraHeadersHint")\n\t\t\t\t\t\t}) : null]', r)
-  const s = hint >= 0 ? src.indexOf('}),', hint) : -1
-  if (p < 0 || q < 0 || r < 0 || hint < 0 || s < 0 || q >= p || p >= r || r >= s) {
-    fail('front-end version mismatch: could not delimit the edit-card fields. No changes were written.')
+  // 7. edit-card: insert HeadersListEditor after the models editor branch
+  //    (dsh 0.1.0-rc.6 edit-card has no proxy/extraHeaders fields to replace)
+  const anchor7 = 'probeBlocked: keyFailure,\n\t\t\t\t\t\t\t\tapi\n\t\t\t\t\t\t\t})\n\t\t\t\t\t\t]'
+  const r7 = src.indexOf(anchor7)
+  if (r7 < 0) {
+    fail('front-end version mismatch: could not locate the edit-card models editor close. No changes were written.')
   }
-  src = src.slice(0, q) + editCall + src.slice(s + 3)
+  const insert7 = 'probeBlocked: keyFailure,\n\t\t\t\t\t\t\t\tapi\n\t\t\t\t\t\t\t}),\n\t\t\t\t\t\t\t'
+  src = src.slice(0, r7) + insert7 + editCall + '\n\t\t\t\t\t\t]' + src.slice(r7 + anchor7.length)
 
   if (src === before) fail('no changes were applied — unexpected')
   if (src.includes('function HeadersListEditor') === false) fail('internal error: patch produced no component')
