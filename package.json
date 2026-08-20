@@ -1,6 +1,6 @@
 {
   "name": "dsh-llm-pi-ai-headers",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "DeepSeek Harness LLM User-Agent/header injector that keeps the official llm-pi-ai adapter: re-injects the user-agent the official adapter filters as an attribution-reserved header, reading the value from the official llm-pi-ai.providers.<route>.headers setting. | DeepSeek Harness LLM User-Agent 注入器：保留官方 llm-pi-ai 适配器，把官方作为 attribution 保留头过滤掉的 user-agent 在请求层补回，配置仍写官方 headers 字段。",
   "type": "module",
   "main": "lib/index.js",

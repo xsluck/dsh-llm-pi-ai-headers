@@ -38,7 +38,7 @@ dsh plugin --profile web add dsh-llm-pi-ai-headers
 dsh plugin --profile web add "git+https://github.com/xsluck/dsh-llm-pi-ai-headers.git"
 
 # 也可以指定 tag / 分支 / commit
-dsh plugin --profile web add "github:xsluck/dsh-llm-pi-ai-headers#v0.2.0"
+dsh plugin --profile web add "github:xsluck/dsh-llm-pi-ai-headers#v0.3.0"
 dsh plugin --profile web add "git+https://github.com/xsluck/dsh-llm-pi-ai-headers.git#main"
 ```
 
