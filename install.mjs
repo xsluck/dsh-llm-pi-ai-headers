@@ -237,6 +237,10 @@ async function patchCordis(args) {
 async function main() {
   const args = parseArgs()
   console.log(`dsh-llm-pi-ai-headers installer\n  home: ${args.home}`)
+  console.log('  NOTE: new installs should prefer the standard dsh plugin flow')
+  console.log('  (dsh plugin --profile web add dsh-llm-pi-ai-headers) — it does not')
+  console.log('  patch the official client bundle and survives dsh upgrades.')
+  console.log('  This legacy installer is kept for existing patch-based setups.\n')
 
   if (!args.clientOnly) await patchCordis(args)
   if (!args.skipClient) {

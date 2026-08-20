@@ -1,0 +1,13 @@
+# dsh-llm-pi-ai-headers — 保留官方适配器的 User-Agent 注入器
+#
+# 与旧版（替换适配器）不同：不再禁用官方 `llm-pi-ai` 适配器。官方适配器
+# 负责全部流解析与提供方契约（reasoning_content 回传、工具调用、上下文
+# 窗口判定等），本插件只把官方因 attribution 保留名过滤而丢掉的
+# `user-agent` 在请求最后一层补回去。
+#
+# 配置入口不变：仍在官方 `llm-pi-ai.providers.<route>.headers`（把
+# User-Agent 写在这里即可，其余自定义头官方会原样发送）。Models 页面、
+# 设置页面均为官方原样。
+- insert:
+    - id: llm-pi-ai-headers
+      name: dsh-llm-pi-ai-headers
