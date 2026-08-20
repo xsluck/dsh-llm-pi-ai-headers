@@ -9,7 +9,8 @@
 ## 功能
 
 - **按提供商配置请求头**：编辑器出现在设置侧边栏「模型扩展」分节（位于「模型」与「插件」之间）
-- **配置入口保持官方原样**：写的是官方 `llm-pi-ai.providers.<route>.headers` 字段，`settings.yaml` 手写与 UI 编辑完全等价；Models 页面、设置页面均为官方原样
+- **按提供商配置重试策略**：同一分节可编辑官方 `retryPolicy`（模式 normal/always、最大重试次数、可重试错误码、退避参数 initialDelayMs/maxDelayMs/jitterRatio），并支持一键恢复默认
+- **配置入口保持官方原样**：写的是官方 `llm-pi-ai.providers.<route>.headers` / `.retryPolicy` 字段，`settings.yaml` 手写与 UI 编辑完全等价；Models 页面、设置页面均为官方原样
 - **User-Agent 自动补回**：官方适配器把 `user-agent` 当作 attribution 保留头过滤掉（`requestHeaders()`），本插件在底层 pi-ai 的 `transformHeaders` 钩子（所有头合并完成之后）把它补进最终请求头；其余自定义头官方原样发送
 - **官方适配器全部能力保留**：reasoning 回传、SSE 解析、工具调用、上下文窗口判定等，与未装插件时完全一致
 - 中英双语
@@ -142,7 +143,8 @@ node install.mjs
    | `User-Agent` | `opencode/1.18.18` |
    | `X-Custom` | `your-value` |
 
-5. 保存
+5. 如需调整失败重试：在下方「重试策略」区修改最大重试次数 / 错误码 / 退避参数（默认 normal 模式 2 次，可一键恢复默认）
+6. 保存
 
 请求头合并顺序：官方 `attributionHeaders`（身份头）→ `Authorization` → `headers`（settings.yaml / UI 写入，官方原样发送，其中 `user-agent` 被官方过滤）→ 本插件 `transformHeaders` 把 `user-agent` 补回（最终覆盖）。
 

@@ -87,8 +87,9 @@ function wrapAdapter(adapter, settings) {
 }
 
 // ── 设置桥（供设置侧边栏「模型扩展」分节读写官方 llm-pi-ai 分节）──────────────
-// 与旧版相同：loopback-only 的 describe/mutate 端点，让浏览器卡片读写官方
-// `llm-pi-ai` settings namespace，无需打官方客户端 bundle 补丁。
+// 与旧版相同：loopback-only 的 describe/mutate 端点，让浏览器分节读写官方
+// `llm-pi-ai` settings namespace（headers / retryPolicy），无需打官方客户端
+// bundle 补丁。
 const BRIDGE_PREFIX = '/api/dsh-llm-pi-ai-headers'
 const MAX_JSON_BODY_BYTES = 128 * 1024
 
