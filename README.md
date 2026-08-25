@@ -1,14 +1,17 @@
 # dsh-llm-pi-ai-headers
 
-让 dsh 支持**按提供商配置自定义请求头**，同时**保留官方 `llm-pi-ai` 适配器**。
+让 dsh 支持**按提供商配置自定义请求头**、**Key 轮询（Round-Robin 多 Key 轮换）**，同时**保留官方 `llm-pi-ai` 适配器**。
 
-旧版插件会禁用并替换官方适配器，因此必须自己解析 SSE 流，承担了参数截断 400、`reasoning_content` 回传等契约风险。本版本改为 B 方案：官方适配器完全保留（流解析、reasoning 回传、工具调用、上下文窗口判定等全部由官方 pi-ai 处理），本插件只做一件事——把官方适配器因 attribution 保留名过滤而丢掉的 `user-agent` 在请求最后一层补回去。
+旧版插件会禁用并替换官方适配器，因此必须自己解析 SSE 流，承担了参数截断 400、`reasoning_content` 回传等契约风险。本版本改为 B 方案：官方适配器完全保留（流解析、reasoning 回传、工具调用、上下文窗口判定等全部由官方 pi-ai 处理），本插件只做两件事——把官方适配器因 attribution 保留名过滤而丢掉的 `user-agent` 在请求最后一层补回去；按配置轮询多个 API Key 注入指定请求头。
 
-典型用途：OpenCode Zen 免费层会拒绝非 opencode 的 `User-Agent`（HTTP 429/403）。装上本插件后，给 `opencode` 提供商加一条 `User-Agent: opencode/1.18.18` 即可稳定使用。
+典型用途：
+- OpenCode Zen 免费层会拒绝非 opencode 的 `User-Agent`（HTTP 429/403）。装上本插件后，给 `opencode` 提供商加一条 `User-Agent: opencode/1.18.18` 即可稳定使用。
+- 同一提供商配置多个 API Key，插件按 Round-Robin 自动轮询，突破单 Key 限流。
 
 ## 功能
 
 - **按提供商配置请求头**：编辑器出现在设置侧边栏「模型扩展」分节（位于「模型」与「插件」之间）
+- **Key 轮询（Round-Robin）**：为同一提供商配置多个 API Key，每次请求按顺序轮询选取下一个注入指定请求头（默认 `Authorization`），适用于多 Key 限流轮换场景
 - **按提供商配置重试策略**：同一分节可编辑官方 `retryPolicy`——模式（限次数/无限重试）、最大重试次数、可重试错误码（中文标签多选 + 自定义错误码）、退避参数（初始延迟/最大延迟/抖动比例），并支持一键恢复默认
 - **配置入口保持官方原样**：写的是官方 `llm-pi-ai.providers.<route>.headers` / `.retryPolicy` 字段，`settings.yaml` 手写与 UI 编辑完全等价；Models 页面、设置页面均为官方原样
 - **User-Agent 自动补回**：官方适配器把 `user-agent` 当作 attribution 保留头过滤掉（`requestHeaders()`），本插件在底层 pi-ai 的 `transformHeaders` 钩子（所有头合并完成之后）把它补进最终请求头；其余自定义头官方原样发送
@@ -143,10 +146,40 @@ node install.mjs
    | `User-Agent` | `opencode/1.18.18` |
    | `X-Custom` | `your-value` |
 
-5. 如需调整失败重试：在下方「重试策略」区修改模式/次数，用中文标签**勾选**可重试错误码（可另填自定义码），并调整退避参数（默认限次数 2 次，可一键恢复默认）
-6. 保存
+5. 如需 **Key 轮询**：勾选「启用 Key 轮询」，设置请求头名称（默认 `Authorization`），逐个添加 API Key。启用后，每次请求会按添加顺序循环选取下一个 Key 注入该请求头，与上方「自定义请求头」互不干扰
+6. 如需调整失败重试：在下方「重试策略」区修改模式/次数，用中文标签**勾选**可重试错误码（可另填自定义码），并调整退避参数（默认限次数 2 次，可一键恢复默认）
+7. 保存
 
-请求头合并顺序：官方 `attributionHeaders`（身份头）→ `Authorization` → `headers`（settings.yaml / UI 写入，官方原样发送，其中 `user-agent` 被官方过滤）→ 本插件 `transformHeaders` 把 `user-agent` 补回（最终覆盖）。
+请求头合并顺序：官方 `attributionHeaders`（身份头）→ `Authorization` → `headers`（settings.yaml / UI 写入，官方原样发送，其中 `user-agent` 被官方过滤）→ 本插件 `transformHeaders` 把 `user-agent` 补回 + Key 轮询注入（最终覆盖）。
+
+### Key 轮询配置示例
+
+```yaml
+# settings.yaml 等价写法（也可通过 UI 配置）
+llm-pi-ai:
+  providers:
+    my-provider:
+      keyPool:
+        headerName: Authorization   # 注入的请求头名，默认 Authorization
+        keys:
+          - "sk-key-aaa-first"
+          - "sk-key-bbb-second"
+          - "sk-key-ccc-third"
+```
+
+请求顺序：第 1 次 → `sk-key-aaa`，第 2 次 → `sk-key-bbb`，第 3 次 → `sk-key-ccc`，第 4 次 → `sk-key-aaa`……
+
+### Key 健康度（坏 Key 定位）
+
+某个 Key 失效（凭据无效 / 额度耗尽 / 限流）时无需猜：
+
+- **服务端日志**：立即打 WARN，含脱敏 Key 与序号——`key #2 (Bearer…ab1f) on "my-provider" failed with INVALID_CREDENTIAL — check/replace this key`
+- **UI 健康面板**：「模型扩展」→ Key 轮询卡片下方显示每个 Key 的 调用数 / 失败数 / 最后错误码；疑似失效的 Key 红框高亮 + ⚠️ 标记
+- **错误码含义**：`INVALID_CREDENTIAL` = Key 已失效；`QUOTA` = 额度耗尽；`RATE_LIMIT` = 限流（通常无需处理）
+
+官方重试机制会自动轮到下一个 Key，因此单个坏 Key 通常只表现为延迟略增；健康面板告诉你该换哪个。修复或删除该 Key 并保存后统计自动清零。
+
+> ⚠️ 注意：`keyPool.keys` 以**明文**存储在 `~/.dsh/settings.yaml`（官方 schema 仅对 `apiKeyEnv` 走凭据服务，未知字段不参与脱敏）。请确保该文件访问权限受控。
 
 ## 卸载
 

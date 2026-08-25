@@ -1,0 +1,5 @@
+# 本地开发产物（peer 依赖安装、打包输出）
+node_modules/
+*.tgz
+pnpm-lock.yaml
+pnpm-workspace.yaml

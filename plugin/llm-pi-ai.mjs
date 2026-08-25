@@ -26,6 +26,120 @@ export const inject = ['llm', 'settings']
 
 const NS = settingsNamespace('llm-pi-ai')
 
+// ── Key Pool 轮询器 ──────────────────────────────────────────────────────────
+// 每个 provider 维护一个轮询计数器与逐 Key 健康统计（调用数/失败数/最后错误），
+// 供 bridge 健康报表与失败告警使用。
+const ROTATORS = new Map()
+
+// 记为「疑似 Key 失效」的错误码：凭据无效 / 配额耗尽 / 限流。
+const KEY_SUSPECT_CODES = new Set(['INVALID_CREDENTIAL', 'QUOTA', 'RATE_LIMIT'])
+
+/** 脱敏：保留头尾少量字符，中间打码；短值整体打码。 */
+function maskKey(value) {
+  const s = String(value)
+  if (s.length <= 8) return s.length === 0 ? '(empty)' : s.slice(0, 1) + '***'
+  return s.slice(0, 6) + '…' + s.slice(-4)
+}
+
+/** 从抛出的错误里提取 harness 错误码（dsh-llm 的共享 taxonomy）。 */
+function errorCodeOf(error) {
+  const code = error?.code ?? error?.failure?.code
+  return typeof code === 'string' && code.length > 0 ? code : 'UNKNOWN'
+}
+
+class KeyRotator {
+  constructor(keys, headerName) {
+    this.keys = keys
+    this.headerName = headerName
+    this.index = 0
+    this.stats = keys.map(() => ({ uses: 0, failures: 0, lastErrorCode: undefined, lastFailedAt: undefined }))
+  }
+  /** 取第 index 个 Key 并记账一次调用。 */
+  pick() {
+    const index = this.index
+    this.index = (this.index + 1) % this.keys.length
+    this.stats[index].uses += 1
+    return { index, headerName: this.headerName, value: this.keys[index] }
+  }
+  recordFailure(index, code) {
+    const entry = this.stats[index]
+    if (entry === undefined) return
+    entry.failures += 1
+    entry.lastErrorCode = code
+    entry.lastFailedAt = new Date().toISOString()
+  }
+  /** 脱敏健康视图（不外发完整 Key）。 */
+  health() {
+    return {
+      headerName: this.headerName,
+      keys: this.keys.map((value, index) => {
+        const entry = this.stats[index]
+        return {
+          index,
+          masked: maskKey(value),
+          uses: entry.uses,
+          failures: entry.failures,
+          lastErrorCode: entry.lastErrorCode,
+          lastFailedAt: entry.lastFailedAt,
+          suspect: entry.lastErrorCode !== undefined && KEY_SUSPECT_CODES.has(entry.lastErrorCode),
+        }
+      }),
+    }
+  }
+}
+
+/**
+ * 全量健康快照：{ provider: health }。有 rotator 的用真实统计；已配置
+ * keyPool 但尚无请求的（懒加载还没建 rotator），合成零统计视图，让 UI
+ * 配置完就能看到面板。不注册 ROTATORS，不影响轮询计数。
+ */
+export function keyHealthSnapshot(section) {
+  const out = {}
+  for (const [provider, rotator] of ROTATORS) out[provider] = rotator.health()
+  const providers = section?.providers
+  if (providers !== undefined && providers !== null) {
+    for (const provider of Object.keys(providers)) {
+      if (out[provider] !== undefined) continue
+      const pool = keyPoolOf(section, provider)
+      if (pool === undefined) continue
+      out[provider] = new KeyRotator(pool.keys, pool.headerName).health()
+    }
+  }
+  return out
+}
+
+/**
+ * 从 provider 的 keyPool 配置提取 { headerName, keys }；无效或空池返回 undefined。
+ * keyPool 结构: { headerName?: string, keys: string[] }（重复 key 自动去重）。
+ */
+function keyPoolOf(section, provider) {
+  const pool = section?.providers?.[provider]?.keyPool
+  if (!pool || !Array.isArray(pool.keys) || pool.keys.length === 0) return undefined
+  const headerName = typeof pool.headerName === 'string' && pool.headerName.length > 0
+    ? pool.headerName
+    : 'Authorization'
+  const validKeys = [...new Set(pool.keys.filter(k => typeof k === 'string' && k.trim().length > 0))]
+  if (validKeys.length === 0) return undefined
+  return { headerName, keys: validKeys }
+}
+
+/**
+ * 获取或创建 provider 的 rotator（配置变化时自动重建）。
+ */
+function getRotator(section, provider) {
+  const pool = keyPoolOf(section, provider)
+  if (pool === undefined) { ROTATORS.delete(provider); return undefined }
+  const existing = ROTATORS.get(provider)
+  if (existing && existing.headerName === pool.headerName &&
+      existing.keys.length === pool.keys.length &&
+      existing.keys.every((k, i) => k === pool.keys[i])) {
+    return existing
+  }
+  const rotator = new KeyRotator(pool.keys, pool.headerName)
+  ROTATORS.set(provider, rotator)
+  return rotator
+}
+
 // ── 注入逻辑 ─────────────────────────────────────────────────────────────────
 // 每个 snapshot 只包一次；adapter 同样只包一次。WeakSet 让旧 snapshot 可被
 // 垃圾回收，且官方重建 snapshot（配置变化）时会再次走到 wrap。
@@ -36,8 +150,7 @@ const WRAPPED_SNAPSHOTS = new WeakSet()
  * 从官方 llm-pi-ai settings 的 providers.<route>.headers 里取大小写不敏感的
  * user-agent。官方适配器会把它过滤掉，我们在这里读回并补进最终请求头。
  */
-function userAgentOf(settings, provider) {
-  const section = settings.get(NS)
+function userAgentOf(section, provider) {
   const headers = section?.providers?.[provider]?.headers
   if (headers === undefined) return undefined
   for (const [headerName, value] of Object.entries(headers)) {
@@ -48,7 +161,32 @@ function userAgentOf(settings, provider) {
   return undefined
 }
 
-function wrapSnapshot(snapshot, settings) {
+/**
+ * 把异步流包一层：迭代中抛错时先回调记账再原样抛出，成功结束不打扰。
+ * 兼容同步可迭代返回值与 Promise 包装的返回值；其余原样返回（防御接口变化）。
+ */
+function observeStream(result, onFailure) {
+  const attach = (stream) => {
+    if (stream === undefined || stream === null || stream[Symbol.asyncIterator] === undefined) return stream
+    const iterator = stream[Symbol.asyncIterator]()
+    return {
+      [Symbol.asyncIterator]: () => ({
+        next: () => iterator.next().catch((error) => {
+          onFailure(error)
+          throw error
+        }),
+        return: (value) => (typeof iterator.return === 'function' ? iterator.return(value) : Promise.resolve({ done: true, value })),
+        throw: (error) => (typeof iterator.throw === 'function' ? iterator.throw(error) : Promise.reject(error)),
+      }),
+    }
+  }
+  if (result !== null && typeof result === 'object' && typeof result.then === 'function') {
+    return result.then(attach)
+  }
+  return attach(result)
+}
+
+function wrapSnapshot(snapshot, settings, logger) {
   if (snapshot === undefined || snapshot.models === undefined) return
   if (WRAPPED_SNAPSHOTS.has(snapshot)) return
   WRAPPED_SNAPSHOTS.add(snapshot)
@@ -56,34 +194,56 @@ function wrapSnapshot(snapshot, settings) {
   const models = snapshot.models
   const originalStreamSimple = models.streamSimple.bind(models)
   models.streamSimple = (model, context, options) => {
-    const ua = userAgentOf(settings, model?.provider)
-    const injected = ua === undefined
-      ? options
-      : {
-          ...(options ?? {}),
-          // pi-ai 的 applyAuth 在 mergeHeaders(auth.headers, options.headers)
-          // 之后执行 transformHeaders，因此这里能覆盖 attribution 的 user-agent。
-          transformHeaders: async (headers) => ({
-            ...(headers ?? {}),
-            'user-agent': ua,
-          }),
-        }
-    return originalStreamSimple(model, context, injected)
+    const provider = model?.provider
+    // 每次请求只读一次 settings，UA 与 keyPool 共用同一份 section。
+    const section = settings.get(NS)
+    const ua = userAgentOf(section, provider)
+    const rotator = getRotator(section, provider)
+    const hasUA = ua !== undefined
+    const hasKeyPool = rotator !== undefined
+    if (!hasUA && !hasKeyPool) return originalStreamSimple(model, context, options)
+
+    // Key 在调用时提前选定（而不是 transformHeaders 里），这样失败可归因到具体 Key。
+    const picked = hasKeyPool ? rotator.pick() : undefined
+
+    const injected = {
+      ...(options ?? {}),
+      transformHeaders: async (headers) => {
+        const result = { ...(headers ?? {}) }
+        // UA 补回（官方过滤了 user-agent，我们补进去）
+        if (hasUA) result['user-agent'] = ua
+        // Key Pool 轮询：注入本次调用预先选定的 Key
+        if (picked !== undefined) result[picked.headerName] = picked.value
+        return result
+      },
+    }
+    const result = originalStreamSimple(model, context, injected)
+    if (picked === undefined) return result
+    return observeStream(result, (error) => {
+      const code = errorCodeOf(error)
+      rotator.recordFailure(picked.index, code)
+      if (KEY_SUSPECT_CODES.has(code)) {
+        logger?.warn(
+          `llm-pi-ai-headers: key #${picked.index + 1} (${maskKey(picked.value)}) on "${provider}" ` +
+          `failed with ${code} — check/replace this key in the key pool`,
+        )
+      }
+    })
   }
 }
 
-function wrapAdapter(adapter, settings) {
+function wrapAdapter(adapter, settings, logger) {
   if (adapter === undefined || WRAPPED_ADAPTERS.has(adapter)) return
   WRAPPED_ADAPTERS.add(adapter)
 
   const originalCurrent = adapter.current.bind(adapter)
   adapter.current = () => {
     const snapshot = originalCurrent()
-    wrapSnapshot(snapshot, settings)
+    wrapSnapshot(snapshot, settings, logger)
     return snapshot
   }
   // 注册时可能已经解析过 snapshot（官方 current() 是惰性的，但也可能已生成）
-  if (adapter.snapshot !== undefined) wrapSnapshot(adapter.snapshot, settings)
+  if (adapter.snapshot !== undefined) wrapSnapshot(adapter.snapshot, settings, logger)
 }
 
 // ── 设置桥（供设置侧边栏「模型扩展」分节读写官方 llm-pi-ai 分节）──────────────
@@ -168,6 +328,7 @@ function makeBridgeRoutes(settings) {
             .filter(descriptor => descriptor !== undefined)
             .map(toView),
           writable: settings.writable !== false,
+          keyHealth: keyHealthSnapshot(settings.get(NS)),
         },
       }
     },
@@ -239,7 +400,7 @@ export function apply(ctx) {
   const scan = () => {
     for (const registration of ctx.llm.adapters.values()) {
       if (registration?.adapter instanceof PiAiAdapter) {
-        wrapAdapter(registration.adapter, ctx.settings)
+        wrapAdapter(registration.adapter, ctx.settings, ctx.logger)
       }
     }
   }
