@@ -146,40 +146,58 @@ node install.mjs
    | `User-Agent` | `opencode/1.18.18` |
    | `X-Custom` | `your-value` |
 
-5. 如需 **Key 轮询**：勾选「启用 Key 轮询」，设置请求头名称（默认 `Authorization`），逐个添加 API Key。启用后，每次请求会按添加顺序循环选取下一个 Key 注入该请求头，与上方「自定义请求头」互不干扰
+5. **Key 轮询：自动启用**。在「模型」页为该提供商保存的主 Key 会自动作为轮询池的 **1 号位**，无需在这里重复粘贴。只需追加额外 Key，它们依次排在主 Key 之后；请求头默认 `Authorization`。自定义请求头与本功能互不干扰
 6. 如需调整失败重试：在下方「重试策略」区修改模式/次数，用中文标签**勾选**可重试错误码（可另填自定义码），并调整退避参数（默认限次数 2 次，可一键恢复默认）
 7. 保存
 
-请求头合并顺序：官方 `attributionHeaders`（身份头）→ `Authorization` → `headers`（settings.yaml / UI 写入，官方原样发送，其中 `user-agent` 被官方过滤）→ 本插件 `transformHeaders` 把 `user-agent` 补回 + Key 轮询注入（最终覆盖）。
+请求头合并顺序：官方 `attributionHeaders`（身份头）→ `Authorization` → `headers`（settings.yaml / UI 写入，官方原样发送，其中 `user-agent` 被官方过滤）→ 本插件 `transformHeaders` 把 `user-agent` 补回 + Key 轮询注入（最终覆盖）。轮到主 Key 时插件**不**改写认证头，官方适配器按 `apiKeyEnv` 从凭据库取值。
 
-### Key 轮询配置示例
+### Key 轮询（主 Key 自动入池）
+
+只要提供商在「模型」页配好主 Key（`apiKeyEnv`），该提供商就**已经**处于轮询状态——1 号位是那把主 Key。在扩展页追加的 Key 依次排队：
 
 ```yaml
 # settings.yaml 等价写法（也可通过 UI 配置）
 llm-pi-ai:
   providers:
     my-provider:
+      apiKeyEnv: MY_PROVIDER_API_KEY   # 模型页保存的主 Key = 轮询池 1 号位
       keyPool:
-        headerName: Authorization   # 注入的请求头名，默认 Authorization
-        keys:
-          - "sk-key-aaa-first"
+        headerName: Authorization      # 注入的请求头名，默认 Authorization
+        keys:                          # 追加的 Key，排在主 Key 之后
           - "sk-key-bbb-second"
           - "sk-key-ccc-third"
 ```
 
-请求顺序：第 1 次 → `sk-key-aaa`，第 2 次 → `sk-key-bbb`，第 3 次 → `sk-key-ccc`，第 4 次 → `sk-key-aaa`……
+请求顺序：第 1 次 → 主 Key（凭据库），第 2 次 → `sk-key-bbb`，第 3 次 → `sk-key-ccc`，第 4 次 → 主 Key……
+
+- **主 Key 不落盘**：`settings.yaml` 里只有 `apiKeyEnv` 引用名，主 Key 本身始终留在凭据库；轮询轮到它时插件跳过注入，走官方 auth 通路。
+- **想关掉轮询**：取消勾选并保存会写入 `keyPool.enabled: false`（显式关闭，而不是删除配置，重新勾选即恢复）。
+- 只有追加 Key、没有模型页主 Key 的提供商同样可用（池子就是这些 Key）。
+
+### 额度耗尽自动暂停 / 自动回池
+
+服务端返回 `429 {"code":"1310","message":"您已达到每周/每月使用上限，您的限额将在 2026-09-09 21:15:14 重置。"}` 这类额度错误时：
+
+1. 插件把它归类为 `QUOTA`（识别中文「使用上限 / 额度 / 配额 / 限额 / 余额」等文案），而不是临时的 `RATE_LIMIT`
+2. 该 Key **立即移出轮询**，后续请求只在剩下的 Key 之间轮转
+3. 解析消息里的重置时间；到点**自动回池**，无需重启、无需人工操作
+4. 消息里没有重置时间时按默认 1 小时冷却；重置时间已过去（如重试旧错误）则立即可用
+5. 全部 Key 都在冷却时，仍会选出最早解冻的那把发出请求（宁可试一次，也不让请求无声失败）
+6. 该 Key 之后请求成功 → 冷却与疑似标记立即清除（误判自愈）
+
+> ⚠️ 注意：`keyPool.keys` 以**明文**存储在 `~/.dsh/settings.yaml`（官方 schema 仅对 `apiKeyEnv` 走凭据服务，未知字段不参与脱敏）。因此**建议把主 Key 留在模型页**（走凭据库），只把额外的备用 Key 填在这里；请确保该文件访问权限受控。
 
 ### Key 健康度（坏 Key 定位）
 
 某个 Key 失效（凭据无效 / 额度耗尽 / 限流）时无需猜：
 
-- **服务端日志**：立即打 WARN，含脱敏 Key 与序号——`key #2 (Bearer…ab1f) on "my-provider" failed with INVALID_CREDENTIAL — check/replace this key`
-- **UI 健康面板**：「模型扩展」→ Key 轮询卡片下方显示每个 Key 的 调用数 / 失败数 / 最后错误码；疑似失效的 Key 红框高亮 + ⚠️ 标记
-- **错误码含义**：`INVALID_CREDENTIAL` = Key 已失效；`QUOTA` = 额度耗尽；`RATE_LIMIT` = 限流（通常无需处理）
+- **服务端日志**：立即打 WARN，含脱敏 Key 与序号——`key #2 (Bearer…ab1f) on "my-provider" failed with INVALID_CREDENTIAL — check/replace this key`；额度类失败额外说明何时自动回池
+- **UI 健康面板**：「模型扩展」→ Key 轮询卡片下方显示每个 Key 的 调用数 / 失败数 / 最后错误码；疑似失效的 Key 红框高亮 + ⚠️ 标记，等待回池的 Key 显示 `冷却至 <时间>`
+- **错误码含义**：`INVALID_CREDENTIAL` = Key 已失效；`QUOTA` = 额度耗尽（自动冷却并定时回池）；`RATE_LIMIT` = 限流（通常无需处理）
+- **失败来源都记账**：抛出的异常与 pi-ai 的流内 `error` 事件（额度类失败的常见下发方式）都会被记录
 
-官方重试机制会自动轮到下一个 Key，因此单个坏 Key 通常只表现为延迟略增；健康面板告诉你该换哪个。修复或删除该 Key 并保存后统计自动清零。
-
-> ⚠️ 注意：`keyPool.keys` 以**明文**存储在 `~/.dsh/settings.yaml`（官方 schema 仅对 `apiKeyEnv` 走凭据服务，未知字段不参与脱敏）。请确保该文件访问权限受控。
+下一次请求会自动轮到下一个 Key，因此单个坏 Key 通常只表现为延迟略增；健康面板告诉你该换哪个。主 Key 的失败也会记账，但它的值永不外泄——面板里只显示「模型页主 Key」标签。修复或删除追加 Key 并保存后统计自动清零。
 
 ## 卸载
 

@@ -34,17 +34,60 @@ const ROTATORS = new Map()
 // 记为「疑似 Key 失效」的错误码：凭据无效 / 配额耗尽 / 限流。
 const KEY_SUSPECT_CODES = new Set(['INVALID_CREDENTIAL', 'QUOTA', 'RATE_LIMIT'])
 
+// ── 配额耗尽（QUOTA）冷却 ────────────────────────────────────────────────────
+// 服务端 429 里带「每周/每月使用上限 … 将在 <时间> 重置」这类消息时，该 Key
+// 在重置时间前不会再成功。把它临时移出轮询（pick 跳过），到点自动回到池里。
+// 无重置时间时按默认冷却期处理。
+const QUOTA_MESSAGE_PATTERN = /quota|usage[\s_-]*limit|insufficient|exceeded|exhausted|使用上限|额度|配额|限额|余额/i
+const RESET_TIME_PATTERN = /(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2})/
+const DEFAULT_QUOTA_COOLDOWN_MS = 60 * 60 * 1000
+
+/** 从错误消息解析重置时间；解析失败返回 undefined。接受 '2026-09-09 21:15:14' 这类本地时间。 */
+function parseResetAt(message) {
+  const match = RESET_TIME_PATTERN.exec(String(message ?? ''))
+  if (match === null) return undefined
+  const t = Date.parse(match[1].replace(' ', 'T'))
+  return Number.isFinite(t) ? t : undefined
+}
+
+/**
+ * 哨兵：代表「官方模型页保存的主 Key」（凭据库里，settings 只有 apiKeyEnv 引用）。
+ * 它永远不是密钥本身；轮到它时插件不覆盖认证头，pi-ai 的正常 auth 流程
+ * 会用凭据库里的主 Key。健康视图里只以 masked 标签出现。
+ */
+const PRIMARY_MODELS_KEY = Symbol('primary-models-key')
+const PRIMARY_MODELS_KEY_LABEL = '(模型页主 Key / Models primary key)'
+
 /** 脱敏：保留头尾少量字符，中间打码；短值整体打码。 */
 function maskKey(value) {
+  if (value === PRIMARY_MODELS_KEY) return PRIMARY_MODELS_KEY_LABEL
   const s = String(value)
   if (s.length <= 8) return s.length === 0 ? '(empty)' : s.slice(0, 1) + '***'
   return s.slice(0, 6) + '…' + s.slice(-4)
 }
 
-/** 从抛出的错误里提取 harness 错误码（dsh-llm 的共享 taxonomy）。 */
+/**
+ * 从抛出的错误里提取 harness 错误码（dsh-llm 的共享 taxonomy）。
+ * pi-ai 的流内 error 事件只有 errorMessage 没有 code，这里按
+ * dsh-llm-pi-ai classifyPiAiError 的口径做消息级兜底分类（含中文配额文案）。
+ */
 function errorCodeOf(error) {
   const code = error?.code ?? error?.failure?.code
-  return typeof code === 'string' && code.length > 0 ? code : 'UNKNOWN'
+  if (typeof code === 'string' && code.length > 0) return code
+  const message = String(error?.message ?? error?.errorMessage ?? error?.failure?.message ?? '')
+  if (message.length === 0) return 'UNKNOWN'
+  if (/\b429\b/.test(message) && QUOTA_MESSAGE_PATTERN.test(message)) return 'QUOTA'
+  if (QUOTA_MESSAGE_PATTERN.test(message)) return 'QUOTA'
+  if (/\b(?:401|403)\b/.test(message)) return 'AUTH'
+  if (/\b429\b|rate.?limit/i.test(message)) return 'RATE_LIMIT'
+  if (/\b5\d\d\b/.test(message)) return 'SERVER'
+  if (/time(?:d)?\s*out|timeout/i.test(message)) return 'TIMEOUT'
+  return 'UNKNOWN'
+}
+
+/** 该 Key 是否仍在冷却中（QUOTA 移出期）。 */
+function isCooling(entry, now = Date.now()) {
+  return entry.cooldownUntil !== undefined && entry.cooldownUntil > now
 }
 
 class KeyRotator {
@@ -52,36 +95,75 @@ class KeyRotator {
     this.keys = keys
     this.headerName = headerName
     this.index = 0
-    this.stats = keys.map(() => ({ uses: 0, failures: 0, lastErrorCode: undefined, lastFailedAt: undefined }))
+    this.stats = keys.map(() => ({ uses: 0, failures: 0, lastErrorCode: undefined, lastFailedAt: undefined, cooldownUntil: undefined }))
   }
-  /** 取第 index 个 Key 并记账一次调用。 */
+  /**
+   * 轮询选取下一个可用 Key：跳过冷却中的（QUOTA 移出期）；全部都在冷却时，
+   * 退回最早解冻的那个——请求照发（宁可打在快恢复的 Key 上，也不无声丢弃）。
+   */
   pick() {
-    const index = this.index
-    this.index = (this.index + 1) % this.keys.length
+    const now = Date.now()
+    let index = -1
+    for (let offset = 0; offset < this.keys.length; offset += 1) {
+      const candidate = (this.index + offset) % this.keys.length
+      if (!isCooling(this.stats[candidate], now)) { index = candidate; break }
+    }
+    if (index === -1) {
+      // 全部冷却：选 cooldownUntil 最早（最先恢复）的
+      let earliest = Infinity
+      for (let i = 0; i < this.keys.length; i += 1) {
+        const until = this.stats[i].cooldownUntil ?? 0
+        if (until < earliest) { earliest = until; index = i }
+      }
+    }
+    this.index = (index + 1) % this.keys.length
     this.stats[index].uses += 1
     return { index, headerName: this.headerName, value: this.keys[index] }
   }
-  recordFailure(index, code) {
+  /**
+   * 记一次失败。QUOTA（含 429+中文上限文案）时进入冷却：有重置时间用重置
+   * 时间，否则默认冷却期；到点 pick 自动把它塞回池里，无需人工干预。
+   */
+  recordFailure(index, code, message) {
     const entry = this.stats[index]
     if (entry === undefined) return
     entry.failures += 1
     entry.lastErrorCode = code
     entry.lastFailedAt = new Date().toISOString()
+    if (code === 'QUOTA') {
+      const resetAt = parseResetAt(message)
+      // 重置时间已过（服务端时钟偏差/重试旧错误）→ 立即可用；无重置时间 → 默认冷却期
+      entry.cooldownUntil = resetAt !== undefined ? resetAt : Date.now() + DEFAULT_QUOTA_COOLDOWN_MS
+    }
+  }
+  /** 记一次成功：清除该 Key 的冷却与疑似状态（额度恢复或误判时自愈）。 */
+  recordSuccess(index) {
+    const entry = this.stats[index]
+    if (entry === undefined) return
+    if (entry.cooldownUntil !== undefined || entry.lastErrorCode !== undefined) {
+      entry.cooldownUntil = undefined
+      entry.lastErrorCode = undefined
+    }
   }
   /** 脱敏健康视图（不外发完整 Key）。 */
   health() {
+    const now = Date.now()
     return {
       headerName: this.headerName,
       keys: this.keys.map((value, index) => {
         const entry = this.stats[index]
+        const cooling = isCooling(entry, now)
         return {
           index,
           masked: maskKey(value),
+          primary: value === PRIMARY_MODELS_KEY,
           uses: entry.uses,
           failures: entry.failures,
           lastErrorCode: entry.lastErrorCode,
           lastFailedAt: entry.lastFailedAt,
           suspect: entry.lastErrorCode !== undefined && KEY_SUSPECT_CODES.has(entry.lastErrorCode),
+          cooling,
+          cooldownUntil: cooling ? new Date(entry.cooldownUntil).toISOString() : undefined,
         }
       }),
     }
@@ -109,18 +191,28 @@ export function keyHealthSnapshot(section) {
 }
 
 /**
- * 从 provider 的 keyPool 配置提取 { headerName, keys }；无效或空池返回 undefined。
- * keyPool 结构: { headerName?: string, keys: string[] }（重复 key 自动去重）。
+ * 从 provider 配置提取 { headerName, keys }；无可用池返回 undefined。
+ *
+ * 隐式池：官方「模型」页配好提供商（apiKeyEnv 指向凭据库）即视为已启用轮询，
+ * 池子的 1 号位就是那把主 Key。主 Key 从不写进 settings.yaml —— 池里放的是
+ * PRIMARY_MODELS_KEY 哨兵，轮到它时不覆盖认证头，由 pi-ai 正常 apiKey 流程
+ * 使用凭据库里的主 Key。扩展页里手动加的 Key 依次排在后面。
+ *
+ * 显式关闭：UI 取消勾选会写 keyPool.enabled = false。
  */
 function keyPoolOf(section, provider) {
-  const pool = section?.providers?.[provider]?.keyPool
-  if (!pool || !Array.isArray(pool.keys) || pool.keys.length === 0) return undefined
-  const headerName = typeof pool.headerName === 'string' && pool.headerName.length > 0
+  const profile = section?.providers?.[provider]
+  const pool = profile?.keyPool
+  if (pool !== undefined && pool !== null && pool.enabled === false) return undefined
+  const headerName = typeof pool?.headerName === 'string' && pool.headerName.length > 0
     ? pool.headerName
     : 'Authorization'
-  const validKeys = [...new Set(pool.keys.filter(k => typeof k === 'string' && k.trim().length > 0))]
-  if (validKeys.length === 0) return undefined
-  return { headerName, keys: validKeys }
+  const configuredKeys = Array.isArray(pool?.keys) ? pool.keys : []
+  const validKeys = [...new Set(configuredKeys.filter(k => typeof k === 'string' && k.trim().length > 0))]
+
+  const hasPrimaryModelsKey = typeof profile?.apiKeyEnv === 'string' && profile.apiKeyEnv.length > 0
+  if (!hasPrimaryModelsKey && validKeys.length === 0) return undefined
+  return { headerName, keys: hasPrimaryModelsKey ? [PRIMARY_MODELS_KEY, ...validKeys] : validKeys }
 }
 
 /**
@@ -162,21 +254,49 @@ function userAgentOf(section, provider) {
 }
 
 /**
- * 把异步流包一层：迭代中抛错时先回调记账再原样抛出，成功结束不打扰。
+ * 把异步流包一层，两种失败都回调 onFailure：
+ * 1) 迭代抛错（transport 层异常）；
+ * 2) pi-ai 流内 error 事件（429/配额耗尽这类以事件而非异常下发的失败，
+ *    形如 {type:'error', error:{errorMessage}}；这是 dsh-llm-pi-ai 错误的
+ *    主下发通道，不看事件就会漏记全部额度类失败）。
+ * 流正常 done（无 error 事件）时回调 onSuccess 清除冷却。
  * 兼容同步可迭代返回值与 Promise 包装的返回值；其余原样返回（防御接口变化）。
  */
-function observeStream(result, onFailure) {
+function observeStream(result, onFailure, onSuccess) {
   const attach = (stream) => {
     if (stream === undefined || stream === null || stream[Symbol.asyncIterator] === undefined) return stream
     const iterator = stream[Symbol.asyncIterator]()
+    let failed = false
+    let done = false
     return {
       [Symbol.asyncIterator]: () => ({
-        next: () => iterator.next().catch((error) => {
-          onFailure(error)
-          throw error
-        }),
-        return: (value) => (typeof iterator.return === 'function' ? iterator.return(value) : Promise.resolve({ done: true, value })),
-        throw: (error) => (typeof iterator.throw === 'function' ? iterator.throw(error) : Promise.reject(error)),
+        next: () => iterator.next().then(
+          (step) => {
+            if (!step.done && step.value !== null && typeof step.value === 'object') {
+              if (step.value.type === 'error') {
+                failed = true
+                onFailure({ message: step.value.error?.errorMessage ?? 'pi-ai stream error event' })
+              } else if (step.value.type === 'done') {
+                done = true
+              }
+            }
+            if (step.done && !failed) onSuccess?.()
+            return step
+          },
+          (error) => {
+            failed = true
+            onFailure(error)
+            throw error
+          },
+        ),
+        return: (value) => {
+          if (!failed && !done) onSuccess?.()
+          return typeof iterator.return === 'function' ? iterator.return(value) : Promise.resolve({ done: true, value })
+        },
+        throw: (error) => {
+          if (!failed) { failed = true; onFailure(error) }
+          return typeof iterator.throw === 'function' ? iterator.throw(error) : Promise.reject(error)
+        },
       }),
     }
   }
@@ -212,23 +332,39 @@ function wrapSnapshot(snapshot, settings, logger) {
         const result = { ...(headers ?? {}) }
         // UA 补回（官方过滤了 user-agent，我们补进去）
         if (hasUA) result['user-agent'] = ua
-        // Key Pool 轮询：注入本次调用预先选定的 Key
-        if (picked !== undefined) result[picked.headerName] = picked.value
+        // Key Pool 轮询：注入本次调用预先选定的 Key。PRIMARY_MODELS_KEY
+        // 代表官方 Models 页保存的 apiKeyEnv：不写入 headers，让 pi-ai
+        // 的正常 apiKey/auth 流程使用该主 Key。
+        if (picked !== undefined && picked.value !== PRIMARY_MODELS_KEY) {
+          result[picked.headerName] = picked.value
+        }
         return result
       },
     }
     const result = originalStreamSimple(model, context, injected)
     if (picked === undefined) return result
-    return observeStream(result, (error) => {
-      const code = errorCodeOf(error)
-      rotator.recordFailure(picked.index, code)
-      if (KEY_SUSPECT_CODES.has(code)) {
-        logger?.warn(
-          `llm-pi-ai-headers: key #${picked.index + 1} (${maskKey(picked.value)}) on "${provider}" ` +
-          `failed with ${code} — check/replace this key in the key pool`,
-        )
-      }
-    })
+    return observeStream(
+      result,
+      (error) => {
+        const code = errorCodeOf(error)
+        const message = String(error?.message ?? error?.errorMessage ?? error?.failure?.message ?? '')
+        rotator.recordFailure(picked.index, code, message)
+        if (code === 'QUOTA') {
+          const entry = rotator.stats[picked.index]
+          const until = entry?.cooldownUntil !== undefined ? new Date(entry.cooldownUntil).toISOString() : 'cooldown expires'
+          logger?.warn(
+            `llm-pi-ai-headers: key #${picked.index + 1} (${maskKey(picked.value)}) on "${provider}" hit QUOTA — ` +
+            `parked until ${until} and will rejoin the pool automatically`,
+          )
+        } else if (KEY_SUSPECT_CODES.has(code)) {
+          logger?.warn(
+            `llm-pi-ai-headers: key #${picked.index + 1} (${maskKey(picked.value)}) on "${provider}" ` +
+            `failed with ${code} — check/replace this key in the key pool`,
+          )
+        }
+      },
+      () => rotator.recordSuccess(picked.index),
+    )
   }
 }
 
@@ -396,10 +532,24 @@ function makeBridgeRoutes(settings) {
   ]
 }
 
+// The plugin may be installed with a nested copy of dsh-llm-pi-ai (for example
+// when the host is on a newer prerelease). In that case `instanceof PiAiAdapter`
+// is false even though the host adapter is the correct implementation, and the
+// old scan silently skipped it — making key rotation appear completely dead.
+// Keep instanceof as the fast path, but also recognize the stable adapter seam.
+function isPiAiAdapter(adapter) {
+  return adapter instanceof PiAiAdapter || (
+    adapter !== undefined && adapter !== null &&
+    typeof adapter.current === 'function' &&
+    typeof adapter.stream === 'function' &&
+    typeof adapter.providerInfo === 'function'
+  )
+}
+
 export function apply(ctx) {
   const scan = () => {
     for (const registration of ctx.llm.adapters.values()) {
-      if (registration?.adapter instanceof PiAiAdapter) {
+      if (isPiAiAdapter(registration?.adapter)) {
         wrapAdapter(registration.adapter, ctx.settings, ctx.logger)
       }
     }

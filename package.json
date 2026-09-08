@@ -1,6 +1,6 @@
 {
   "name": "dsh-llm-pi-ai-headers",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "DeepSeek Harness LLM User-Agent/header injector with key pool round-robin: keeps the official llm-pi-ai adapter, re-injects user-agent, and supports multi-key rotation per provider. | DeepSeek Harness LLM 请求头注入器 + Key 轮询：保留官方适配器，补回 User-Agent，支持按提供商多 Key Round-Robin 轮询。",
   "type": "module",
   "main": "lib/index.js",
