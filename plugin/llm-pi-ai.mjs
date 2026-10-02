@@ -18,13 +18,16 @@
  * 因此配置入口仍是官方 Models/设置页面，无需任何新配置项。
  */
 
-import { SettingsConflictError, settingsNamespace } from '@deepseek-ai/dsh-settings'
+// dsh ≥0.1.5 移除了 settingsNamespace 品牌函数：命名空间现在就是纯字符串
+// （小写连字符标识符）。旧版 settingsNamespace('llm-pi-ai') 只是加品牌，
+// 两边 API（get/describe/mutate）对纯字符串的接受方式完全一致。
+import { SettingsConflictError } from '@deepseek-ai/dsh-settings'
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
 
 export const name = 'llm-pi-ai-headers'
 export const inject = ['llm', 'settings']
 
-const NS = settingsNamespace('llm-pi-ai')
+const NS = 'llm-pi-ai'
 
 // ── Key Pool 轮询器 ──────────────────────────────────────────────────────────
 // 每个 provider 维护一个轮询计数器与逐 Key 健康统计（调用数/失败数/最后错误），
@@ -306,6 +309,29 @@ function observeStream(result, onFailure, onSuccess) {
   return attach(result)
 }
 
+// ── 分节读取（dsh 0.2.0：settings.get(ns) 被移除）─────────────────────────────
+// 0.2.0 的 SettingsForms 只有 describe/update/replace/mutate；分节现值从
+// describe() 的 descriptor.value 读取（不带 redactSecrets 时为未脱敏现值）。
+// 老运行时（≤0.1.5）仍有 settings.get：保留直通，语义与从前完全一致
+// （每请求现读，支持任意外部热更）。describe() 会投影全部活跃分节，成本
+// 较高，因此仅对新 API 路径缓存，settings/document-updated 事件（任何
+// 写入都会触发）到来时失效。
+let sectionCacheValid = false
+let sectionCacheValue
+
+function readSection(settings) {
+  if (typeof settings.get === 'function') return settings.get(NS)
+  if (sectionCacheValid) return sectionCacheValue
+  try {
+    const descriptor = settings.describe().find(d => String(d.ns) === String(NS))
+    sectionCacheValue = descriptor?.value
+  } catch {
+    sectionCacheValue = undefined
+  }
+  sectionCacheValid = true
+  return sectionCacheValue
+}
+
 function wrapSnapshot(snapshot, settings, logger) {
   if (snapshot === undefined || snapshot.models === undefined) return
   if (WRAPPED_SNAPSHOTS.has(snapshot)) return
@@ -316,7 +342,7 @@ function wrapSnapshot(snapshot, settings, logger) {
   models.streamSimple = (model, context, options) => {
     const provider = model?.provider
     // 每次请求只读一次 settings，UA 与 keyPool 共用同一份 section。
-    const section = settings.get(NS)
+    const section = readSection(settings)
     const ua = userAgentOf(section, provider)
     const rotator = getRotator(section, provider)
     const hasUA = ua !== undefined
@@ -455,17 +481,23 @@ function makeBridgeRoutes(settings) {
 
   const handlers = {
     async describe() {
-      const descriptors = settings.describe({ redactSecrets: true })
-      return {
-        ok: true,
-        value: {
-          namespaces: allowlisted()
-            .map(ns => descriptors.find(descriptor => String(descriptor.ns) === ns))
-            .filter(descriptor => descriptor !== undefined)
-            .map(toView),
-          writable: settings.writable !== false,
-          keyHealth: keyHealthSnapshot(settings.get(NS)),
-        },
+      try {
+        const descriptors = settings.describe({ redactSecrets: true })
+        return {
+          ok: true,
+          value: {
+            namespaces: allowlisted()
+              .map(ns => descriptors.find(descriptor => String(descriptor.ns) === ns))
+              .filter(descriptor => descriptor !== undefined)
+              .map(toView),
+            writable: settings.writable !== false,
+            keyHealth: keyHealthSnapshot(readSection(settings)),
+          },
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        const stack = error instanceof Error ? error.stack : undefined
+        return { ok: false, code: 'internal', message, stack }
       }
     },
     async mutate(request) {
@@ -479,7 +511,7 @@ function makeBridgeRoutes(settings) {
       }
       const expectedRevision = typeof body.expectedRevision === 'number' ? body.expectedRevision : undefined
       try {
-        await settings.mutate(settingsNamespace(ns), body.ops, expectedRevision)
+        await settings.mutate(ns, body.ops, expectedRevision)
       } catch (error) {
         if (error instanceof SettingsConflictError) {
           return { ok: false, code: 'settings-conflict', message: error.message }
@@ -558,6 +590,10 @@ export function apply(ctx) {
   // （llm/adapters-updated 事件覆盖）；两者都处理。
   scan()
   ctx.on('llm/adapters-updated', scan)
+
+  // settings 有任何写入（headers/keyPool 编辑、模型页保存）就丢掉分节缓存，
+  // 下一次请求/bridge describe 重新投影。
+  ctx.on('settings/document-updated', () => { sectionCacheValid = false })
 
   // 标准客户端桥（设置侧边栏「模型扩展」分节）：读写官方 llm-pi-ai 分节的
   // headers 字段。additive，不打官方客户端 bundle 补丁。

@@ -1,6 +1,6 @@
 {
   "name": "dsh-llm-pi-ai-headers",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "DeepSeek Harness LLM User-Agent/header injector with key pool round-robin: keeps the official llm-pi-ai adapter, re-injects user-agent, and supports multi-key rotation per provider. | DeepSeek Harness LLM 请求头注入器 + Key 轮询：保留官方适配器，补回 User-Agent，支持按提供商多 Key Round-Robin 轮询。",
   "type": "module",
   "main": "lib/index.js",
@@ -49,21 +49,19 @@
     "node": ">=18"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-launch-environment": "^0.1.0-rc.7",
-    "@deepseek-ai/dsh-llm": "^0.1.0-rc.7",
-    "@deepseek-ai/dsh-llm-pi-ai": "^0.1.0-rc.7",
-    "@deepseek-ai/dsh-settings": "^0.1.0-rc.7",
+    "@deepseek-ai/dsh-launch-environment": "^0.1.0-rc.7 || ^0.1.5-rc.1 || ^0.2.0-rc.1",
+    "@deepseek-ai/dsh-llm": "^0.1.0-rc.7 || ^0.1.5-rc.1 || ^0.2.0-rc.1",
+    "@deepseek-ai/dsh-llm-pi-ai": "^0.1.0-rc.7 || ^0.1.5-rc.1 || ^0.2.0-rc.1",
+    "@deepseek-ai/dsh-settings": "^0.1.0-rc.7 || ^0.1.5-rc.1 || ^0.2.0-rc.1",
     "@deepseek-ai/schemastery": "^3.18.1",
-    "@earendil-works/pi-ai": "^0.82.1"
+    "@earendil-works/pi-ai": "^0.82.1 || ^0.85.1"
   },
   "dsh": {
     "bundle": {
       "patch": "cordis.patch.yml"
     },
     "client": {
-      "inject": [
-        "@deepseek-ai/dsh-client-runtime"
-      ],
+      "inject": [],
       "platform": "web"
     }
   }
