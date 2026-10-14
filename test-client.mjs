@@ -150,5 +150,22 @@ test("没有建议时不改 compat", () => {
   assert.equal(t.mergeCompatPatch({ a: 1 }, undefined), undefined);
 });
 
+console.log("桥响应解析（用户实际踩到的坑：host 半边未重启 → 404 纯文本）");
+const fakeResponse = (status, body) => ({ status, text: async () => body });
+await (async () => {
+  const notFound = await t.readBridgeJson(fakeResponse(404, "not found"));
+  assert.equal(notFound.ok, false);
+  assert.equal(notFound.code, "bridge-not-loaded");
+  assert.match(notFound.message, /HTTP 404/);
+  const html = await t.readBridgeJson(fakeResponse(502, "<html>bad gateway</html>"));
+  assert.equal(html.ok, false);
+  assert.equal(html.code, "bridge-bad-response");
+  const good = await t.readBridgeJson(fakeResponse(200, '{"ok":true,"value":{"a":1}}'));
+  assert.equal(good.ok, true);
+  assert.equal(good.value.a, 1);
+  passed += 3;
+  console.log("  ✓ 404/502 纯文本降级为结构化失败，正常 JSON 照常解析");
+})();
+
 if (process.exitCode === undefined) console.log("\ntest-client: 全部 " + passed + " 项通过");
 else console.error("\ntest-client: 有失败项");
