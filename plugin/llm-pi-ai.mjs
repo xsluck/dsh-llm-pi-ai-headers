@@ -23,6 +23,7 @@
 // 两边 API（get/describe/mutate）对纯字符串的接受方式完全一致。
 import { SettingsConflictError } from '@deepseek-ai/dsh-settings'
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
+import { makeThinkingRoutes } from './thinking-routes.mjs'
 
 export const name = 'llm-pi-ai-headers'
 export const inject = ['llm', 'settings']
@@ -473,6 +474,19 @@ function toView(descriptor) {
   }
 }
 
+/** settings 桥与思考强度路由共用的请求守卫：只接受 loopback 的 POST。 */
+function guardBridgeRequest(req, res) {
+  if (!isLoopbackRequest(req)) {
+    writeJson(res, 403, { error: 'loopback requests only' })
+    return false
+  }
+  if (req.method !== 'POST') {
+    writeJson(res, 405, { error: 'method not allowed: ' + (req.method ?? '') })
+    return false
+  }
+  return true
+}
+
 function makeBridgeRoutes(settings) {
   const allowlisted = () =>
     settings.describe({ redactSecrets: true })
@@ -527,17 +541,7 @@ function makeBridgeRoutes(settings) {
     },
   }
 
-  const guard = (req, res) => {
-    if (!isLoopbackRequest(req)) {
-      writeJson(res, 403, { error: 'loopback requests only' })
-      return false
-    }
-    if (req.method !== 'POST') {
-      writeJson(res, 405, { error: 'method not allowed: ' + (req.method ?? '') })
-      return false
-    }
-    return true
-  }
+  const guard = guardBridgeRequest
 
   return [
     {
@@ -561,6 +565,40 @@ function makeBridgeRoutes(settings) {
         writeJson(res, 200, await handlers.mutate(body))
       },
     },
+  ]
+}
+
+/**
+ * 思考强度的三条 loopback 路由，与 settings 桥共用同一套守卫与 body 解析，
+ * 因此客户端只需要一个 fetch 前缀。
+ * @param thinking - makeThinkingRoutes 的返回值
+ */
+function makeThinkingWebRoutes(thinking) {
+  const route = (suffix, handler) => ({
+    kind: 'exact',
+    path: `${BRIDGE_PREFIX}/thinking/${suffix}`,
+    handler: async (req, res) => {
+      if (!guardBridgeRequest(req, res)) return
+      const body = await readJsonBody(req)
+      if (body === undefined) {
+        writeJson(res, 400, { ok: false, code: 'malformed', message: 'malformed JSON body' })
+        return
+      }
+      try {
+        writeJson(res, 200, await handler(body))
+      } catch (error) {
+        writeJson(res, 200, {
+          ok: false,
+          code: 'internal',
+          message: error instanceof Error ? error.message : String(error),
+        })
+      }
+    },
+  })
+  return [
+    route('suggest', body => thinking.handlers.suggest(body)),
+    route('probe', body => thinking.handlers.probe(body)),
+    route('catalog', body => thinking.handlers.catalog(body)),
   ]
 }
 
@@ -599,7 +637,16 @@ export function apply(ctx) {
   // headers 字段。additive，不打官方客户端 bundle 补丁。
   ctx.inject(['webServer', 'settings'], (sctx) => {
     sctx.effect(() => {
-      const disposers = makeBridgeRoutes(sctx.settings).map(route => sctx.webServer.register(route))
+      const thinking = makeThinkingRoutes({
+        ctx: sctx,
+        settings: sctx.settings,
+        readSection,
+        logger: sctx.logger,
+      })
+      const disposers = [
+        ...makeBridgeRoutes(sctx.settings),
+        ...makeThinkingWebRoutes(thinking),
+      ].map(route => sctx.webServer.register(route))
       return () => {
         for (const dispose of disposers) dispose()
       }

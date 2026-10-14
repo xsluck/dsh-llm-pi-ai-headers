@@ -1,7 +1,7 @@
 {
   "name": "dsh-llm-pi-ai-headers",
-  "version": "0.6.0",
-  "description": "DeepSeek Harness LLM User-Agent/header injector with key pool round-robin: keeps the official llm-pi-ai adapter, re-injects user-agent, and supports multi-key rotation per provider. | DeepSeek Harness LLM 请求头注入器 + Key 轮询：保留官方适配器，补回 User-Agent，支持按提供商多 Key Round-Robin 轮询。",
+  "version": "0.7.0",
+  "description": "DeepSeek Harness LLM User-Agent/header injector with key pool round-robin and per-model thinking-effort configuration: keeps the official llm-pi-ai adapter, re-injects user-agent, rotates keys, and edits each model's reasoningEfforts/compat with three-source auto-detection. | DeepSeek Harness LLM 请求头注入器 + Key 轮询 + 模型级思考强度配置：保留官方适配器，补回 User-Agent，多 Key 轮询，并在设置页逐模型配置推理档位（网关探测 / 外部目录 / 内置知识库三层自动识别）。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -20,7 +20,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --check lib/index.js && node --check lib/client.js && node --check plugin/llm-pi-ai.mjs && node test-rotation.mjs && echo OK"
+    "test": "node --check lib/index.js && node --check lib/client.js && node --check plugin/llm-pi-ai.mjs && node --check plugin/thinking.mjs && node --check plugin/thinking-routes.mjs && node test-rotation.mjs && node test-thinking.mjs && node test-client.mjs && echo OK"
   },
   "keywords": [
     "deepseek-harness",
@@ -34,7 +34,11 @@
     "round-robin",
     "opencode",
     "user-agent",
-    "zen"
+    "zen",
+    "reasoning-effort",
+    "thinking-levels",
+    "reasoningEfforts",
+    "model-capability"
   ],
   "license": "MIT",
   "publishConfig": {

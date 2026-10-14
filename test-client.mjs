@@ -1,0 +1,154 @@
+/**
+ * 客户端草稿逻辑单测。
+ *
+ * 浏览器 bundle 不能被 node 直接渲染，但它内部那套"草稿 → reasoningEfforts"
+ * 的转换是会不会写坏配置的关键，所以用最小 react 垫片把 bundle 加载起来，
+ * 只测导出的纯函数（exports.__test）。
+ *
+ * 运行：node test-client.mjs
+ */
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+let captured;
+globalThis.window = {
+  __ModuleLoader__: {
+    load: (definition) => {
+      captured = definition;
+    },
+  },
+};
+
+const reactShim = {
+  createElement: (...args) => ({ args }),
+  useState: (initial) => [typeof initial === "function" ? initial() : initial, () => {}],
+  useEffect: () => {},
+  useRef: (initial) => ({ current: initial }),
+  useCallback: (fn) => fn,
+  useMemo: (fn) => fn(),
+};
+
+// 加载 bundle（顶层会调用 window.__ModuleLoader__.load）
+const source = readFileSync(new URL("./lib/client.js", import.meta.url), "utf8");
+// eslint-disable-next-line no-eval
+(0, eval)(source);
+
+assert.ok(captured !== undefined, "bundle 没有调用 __ModuleLoader__.load");
+assert.equal(captured.id, "dsh-llm-pi-ai-headers");
+
+const moduleExports = captured.factory((name) => {
+  if (name === "react") return reactShim;
+  throw new Error("unexpected require: " + name);
+});
+const t = moduleExports.__test;
+assert.ok(t !== undefined, "bundle 没有导出 __test");
+
+let passed = 0;
+function test(name, fn) {
+  try {
+    fn();
+    passed += 1;
+    console.log("  ✓ " + name);
+  } catch (error) {
+    console.error("  ✗ " + name);
+    console.error("    " + (error && error.message ? error.message : String(error)));
+    process.exitCode = 1;
+  }
+}
+
+const PROFILE = {
+  models: [
+    { id: "a", name: "A" },
+    { id: "b", reasoningEfforts: false },
+    { id: "c", reasoningEfforts: { off: "none", high: "high" } },
+    { id: "d", reasoningEfforts: {}, compat: { thinkingFormat: "zai" } },
+  ],
+};
+
+console.log("声明状态读回（三态）");
+test("未声明 → inherit", () => assert.equal(t.declaredStateOf(PROFILE.models[0]).mode, "inherit"));
+test("false → off", () => assert.equal(t.declaredStateOf(PROFILE.models[1]).mode, "off"));
+test("字典 → custom", () => assert.equal(t.declaredStateOf(PROFILE.models[2]).mode, "custom"));
+test("空字典视为未声明（官方 schema 不接受空梯子）", () => assert.equal(t.declaredStateOf(PROFILE.models[3]).mode, "inherit"));
+
+console.log("由 profile 生成草稿行");
+test("行数与模型一致，且带出 declaredCompat", () => {
+  const rows = t.thinkingRowsOf(PROFILE);
+  assert.equal(rows.length, 4);
+  assert.deepEqual(rows[3].declaredCompat, { thinkingFormat: "zai" });
+  assert.deepEqual(rows[2].levels, { off: "none", high: "high" });
+});
+
+console.log("建议合并（只预填未声明的行）");
+test("未声明的行被预填，已声明的行不动", () => {
+  const rows = t.thinkingRowsOf(PROFILE);
+  const merged = t.withSuggestions(rows, {
+    models: [
+      { id: "a", suggestion: { efforts: { off: null, high: "high" }, compat: { supportsDeveloperRole: false } } },
+      { id: "c", suggestion: { efforts: { off: "none", high: "high", max: "max" } } },
+    ],
+  });
+  assert.equal(merged[0].mode, "custom");
+  assert.equal(merged[0].prefilled, true);
+  assert.deepEqual(merged[0].levels, { off: null, high: "high" });
+  assert.equal(merged[2].mode, "custom");
+  assert.equal(merged[2].prefilled, false);
+  assert.deepEqual(merged[2].levels, { off: "none", high: "high" });
+});
+test("用户动过的行不再被建议覆盖", () => {
+  const rows = t.thinkingRowsOf(PROFILE).map((row) => (row.id === "a" ? { ...row, touched: true, mode: "off" } : row));
+  const merged = t.withSuggestions(rows, { models: [{ id: "a", suggestion: { efforts: { high: "high" } } }] });
+  assert.equal(merged[0].mode, "off");
+});
+
+console.log("草稿 → reasoningEfforts");
+test("off 留空归一为 null（=不传参数）", () => {
+  assert.deepEqual(t.ladderOfRow({ levels: { off: "", high: "high" } }), { off: null, high: "high" });
+});
+test("off 有值则保留", () => {
+  assert.deepEqual(t.ladderOfRow({ levels: { off: "none", high: "high" } }), { off: "none", high: "high" });
+});
+test("非 off 档空值被丢弃（官方 schema 会拒空串）", () => {
+  assert.deepEqual(t.ladderOfRow({ levels: { high: "  ", low: "low" } }), { low: "low" });
+});
+
+console.log("落盘前校验");
+test("合法梯子通过", () => assert.equal(t.ladderIsSendable({ off: null, high: "high" }), true));
+test("只有 off 被拒", () => assert.equal(t.ladderIsSendable({ off: "none" }), false));
+test("空对象被拒", () => assert.equal(t.ladderIsSendable({}), false));
+test("非 off 档空串被拒", () => assert.equal(t.ladderIsSendable({ high: "" }), false));
+
+console.log("改动判定（决定是否写盘）");
+test("模式变化算改动", () => {
+  assert.equal(t.rowChanged({ mode: "off", declaredMode: "inherit", levels: {} }), true);
+});
+test("档位相同不算改动", () => {
+  assert.equal(t.rowChanged({ mode: "custom", declaredMode: "custom", levels: { off: "none", high: "high" }, declaredEfforts: { off: "none", high: "high" } }), false);
+});
+test("off 的 '' 与 null 视为等价（不产生无意义写入）", () => {
+  assert.equal(t.rowChanged({ mode: "custom", declaredMode: "custom", levels: { off: "", high: "high" }, declaredEfforts: { off: null, high: "high" } }), false);
+});
+test("档位值变化算改动", () => {
+  assert.equal(t.rowChanged({ mode: "custom", declaredMode: "custom", levels: { off: "", high: "ultra" }, declaredEfforts: { off: null, high: "high" } }), true);
+});
+test("新增档位算改动", () => {
+  assert.equal(t.rowChanged({ mode: "custom", declaredMode: "custom", levels: { off: null, high: "high", max: "max" }, declaredEfforts: { off: null, high: "high" } }), true);
+});
+
+console.log("compat 合并语义");
+test("只补键，不删已有键", () => {
+  assert.deepEqual(t.mergeCompatPatch({ custom: 1 }, { thinkingFormat: "openai", supportsDeveloperRole: false }), {
+    custom: 1,
+    thinkingFormat: "openai",
+    supportsDeveloperRole: false,
+  });
+});
+test("无变化返回 undefined（不写盘）", () => {
+  assert.equal(t.mergeCompatPatch({ thinkingFormat: "openai" }, { thinkingFormat: "openai" }), undefined);
+});
+test("没有建议时不改 compat", () => {
+  assert.equal(t.mergeCompatPatch({ a: 1 }, undefined), undefined);
+});
+
+if (process.exitCode === undefined) console.log("\ntest-client: 全部 " + passed + " 项通过");
+else console.error("\ntest-client: 有失败项");
