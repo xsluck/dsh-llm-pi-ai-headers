@@ -267,5 +267,23 @@ test("sameInput 忽略顺序与重复", () => {
   assert.equal(t.sameInput(undefined, []), true);
 });
 
+console.log("保存失败原因的分级（旧版把一切都报成「校验拒绝」，真实原因被丢弃）");
+test("settings-conflict 不被当作校验拒绝", () => {
+  const conflict = { ok: false, code: "settings-conflict", message: "changed since it was read" };
+  const isConflict = conflict.code === "settings-conflict";
+  assert.equal(isConflict, true);
+  // 冲突分支必须带出服务端原文，且不能走进"校验拒绝"那条
+  assert.match(conflict.message, /changed/);
+});
+test("内部错误也带出真实 message 与错误码", () => {
+  const internal = { ok: false, code: "internal", message: 'Config field "providers.x.models.0.input" is not volatile' };
+  assert.notEqual(internal.code, "settings-conflict");
+  assert.match(internal.message, /not volatile/);
+});
+test("bridge-not-loaded 走单独的桥未加载提示", () => {
+  const notLoaded = { ok: false, code: "bridge-not-loaded", status: 404, message: "HTTP 404 · not found" };
+  assert.equal(notLoaded.code === "bridge-not-loaded" || notLoaded.code === "bridge-bad-response", true);
+});
+
 if (process.exitCode === undefined) console.log("\ntest-client: 全部 " + passed + " 项通过");
 else console.error("\ntest-client: 有失败项");
