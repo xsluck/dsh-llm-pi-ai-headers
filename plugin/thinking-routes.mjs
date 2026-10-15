@@ -53,30 +53,39 @@ function cachePath() {
   return join(home, CACHE_DIRNAME, CACHE_FILENAME)
 }
 
-/** 解析凭据引用：优先走 credentials 服务，退化为同名环境变量。 */
-function resolveCredential(ctx, ref) {
+/**
+ * 解析凭据引用：优先走 credentials 服务，退化为同名环境变量。
+ *
+ * ⚠️ `ctx.credentials.resolve()` 是 **async**（返回 Promise）。早期版本按同步
+ * 调用，于是 `resolved.value` 恒为 undefined，静默退化成"没凭据"——表现就是
+ * 探测一律 HTTP 401（凭据明明存在）。这里必须 await。
+ * @returns 凭据值，或 undefined
+ */
+async function resolveCredential(ctx, ref) {
   if (typeof ref !== 'string' || ref.length === 0) return undefined
   try {
+    // `ctx.reflect.get` 是 cordis 的"无需 inject 也能读服务"入口，服务不存在
+    // 时返回 undefined 而不是抛 "cannot get property without inject"。
     const service = typeof ctx?.reflect?.get === 'function'
       ? ctx.reflect.get('credentials')
       : typeof ctx?.get === 'function'
         ? ctx.get('credentials')
         : undefined
-    const resolved = service?.resolve?.(ref)
+    const resolved = await service?.resolve?.(ref)
     if (resolved !== undefined && resolved !== null) {
       const value = typeof resolved === 'string' ? resolved : resolved.value
       if (typeof value === 'string' && value.length > 0) return value
     }
   } catch {
-    // 服务缺失或引用非法 → 落到环境变量
+    // 服务缺失、引用非法或解析失败 → 落到环境变量
   }
   const fromEnv = process.env[ref]
   return typeof fromEnv === 'string' && fromEnv.length > 0 ? fromEnv : undefined
 }
 
 /** 该 route 用来探测 /models 的凭据：主 Key 引用优先，其次 Key 池第一个。 */
-function probeCredential(ctx, profile) {
-  const fromRef = resolveCredential(ctx, profile?.apiKeyEnv)
+async function probeCredential(ctx, profile) {
+  const fromRef = await resolveCredential(ctx, profile?.apiKeyEnv)
   if (fromRef !== undefined) return fromRef
   const keys = profile?.keyPool?.keys
   if (Array.isArray(keys)) {
@@ -116,7 +125,7 @@ async function probeModels(ctx, profile) {
     if (typeof value === 'string') headers[key] = value
   }
   headers.accept = 'application/json'
-  const credential = probeCredential(ctx, profile)
+  const credential = await probeCredential(ctx, profile)
   if (credential !== undefined) headers.authorization = `Bearer ${credential}`
 
   const controller = new AbortController()

@@ -483,6 +483,30 @@ export function toHarnessModalities(list) {
   return known;
 }
 
+/**
+ * 从"布尔能力标志"推断模态。
+ *
+ * 有些网关不用列表，而是给一堆布尔：`vision` / `supports_vision` /
+ * `supports_images` / `multimodal` / `capabilities.vision` / `abilities.vision`。
+ * 任一为 true 即认为支持图片；显式全为 false 时返回 `["text"]`（明确不支持）；
+ * 一个标志都没有时返回 undefined（沉默 ≠ 不支持）。
+ * @param entry - 原始 /models 条目
+ * @returns `["text","image"]` / `["text"]` / undefined
+ */
+function visionFlagsToModalities(entry) {
+  const flags = [
+    entry.vision,
+    entry.supports_vision,
+    entry.supports_images,
+    entry.multimodal,
+    entry.capabilities?.vision,
+    entry.capabilities?.images,
+    entry.abilities?.vision,
+  ].filter((value) => typeof value === "boolean");
+  if (flags.length === 0) return undefined;
+  return flags.some((value) => value === true) ? ["text", "image"] : ["text"];
+}
+
 /** 从任意字段里读一个正整数（用于 contextWindow / maxTokens）。 */
 function positiveInt(value) {
   if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
@@ -549,11 +573,15 @@ export function analyzeListingEntry(entry) {
   }
 
   // ── 模态 ──
+  // 先看显式列表（最精确），再退到布尔标志（workbuddy 这类网关会同时给两套）。
   const rawInput = entry.input_modalities
     ?? (Array.isArray(entry.modalities) ? entry.modalities : undefined)
     ?? entry.modalities?.input
     ?? entry.architecture?.input_modalities;
-  signal.input = toHarnessModalities(rawInput ?? (typeof entry.modalities === "string" ? entry.modalities.split(/[+>]/) : undefined));
+  const fromList = toHarnessModalities(
+    rawInput ?? (typeof entry.modalities === "string" ? entry.modalities.split(/[+>]/) : undefined),
+  );
+  signal.input = fromList ?? visionFlagsToModalities(entry);
 
   // ── 容量 ──
   // 上下文窗口：不同网关的字段名差异很大，按优先级逐个试。
@@ -565,6 +593,9 @@ export function analyzeListingEntry(entry) {
     entry.max_model_len,
     entry.max_input_tokens,
     entry.top_provider?.context_length,
+    // 有的网关给的是候选窗口数组（如 workbuddy 的 [300000, 1000000]）：
+    // 取最大值作为"该模型能用的上下文上限"。
+    Array.isArray(entry.context_windows) ? Math.max(...entry.context_windows.filter((n) => typeof n === "number")) : undefined,
   ];
   for (const candidate of contextCandidates) {
     const value = positiveInt(candidate);

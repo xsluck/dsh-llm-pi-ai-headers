@@ -274,5 +274,38 @@ test("容量建议优先级：网关 > 外部 > 知识库", () => {
   assert.equal(fromKnowledge.source, "knowledge");
 });
 
+console.log("网关布尔视觉标志与 context_windows（workbuddy 实测字段）");
+test("vision:true 推断出 text+image", () => {
+  const signal = analyzeListingEntry({ id: "hy4-preview-f", vision: true });
+  assert.deepEqual(signal.input, ["text", "image"]);
+});
+test("supports_vision / capabilities.vision / abilities.vision 任一为真即可", () => {
+  assert.deepEqual(analyzeListingEntry({ id: "a", supports_vision: true }).input, ["text", "image"]);
+  assert.deepEqual(analyzeListingEntry({ id: "b", capabilities: { vision: true } }).input, ["text", "image"]);
+  assert.deepEqual(analyzeListingEntry({ id: "c", abilities: { vision: true } }).input, ["text", "image"]);
+});
+test("显式 false 视为只支持文本（明确不支持 ≠ 沉默）", () => {
+  assert.deepEqual(analyzeListingEntry({ id: "d", vision: false, supports_images: false }).input, ["text"]);
+});
+test("一个视觉标志都没有时保持沉默（undefined）", () => {
+  assert.equal(analyzeListingEntry({ id: "e", object: "model", owned_by: "x" }).input, undefined);
+});
+test("显式模态列表优先于布尔标志", () => {
+  const signal = analyzeListingEntry({ id: "f", vision: true, input_modalities: ["text"] });
+  assert.deepEqual(signal.input, ["text"]);
+});
+test("context_windows 候选数组取最大值", () => {
+  assert.equal(analyzeListingEntry({ id: "g", context_windows: [300000, 1000000] }).contextLength, 1000000);
+});
+test("max_input_tokens / max_completion_tokens 也能读", () => {
+  const signal = analyzeListingEntry({ id: "h", max_input_tokens: 1000000, max_completion_tokens: 64000 });
+  assert.equal(signal.contextLength, 1000000);
+  assert.equal(signal.maxTokens, 64000);
+});
+test("网关同时给 reasoning_efforts 数组时仍走既有布尔路径（不误判）", () => {
+  const signal = analyzeListingEntry({ id: "i", supports_reasoning: true, reasoning_efforts: ["high"] });
+  assert.equal(signal.reasoning, true);
+});
+
 if (process.exitCode === undefined) console.log("\ntest-thinking: 全部 " + passed + " 项通过");
 else console.error("\ntest-thinking: 有失败项");
