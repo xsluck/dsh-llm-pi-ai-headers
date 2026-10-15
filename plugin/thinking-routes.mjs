@@ -290,6 +290,7 @@ export function makeThinkingRoutes(options) {
       const listingEntry = probe?.entries?.get(id)
       const suggestion = buildSuggestion({
         route: profile,
+        routeName: route,
         model,
         listingEntry,
         externalIndex: state.catalog.index,
@@ -310,7 +311,7 @@ export function makeThinkingRoutes(options) {
         capacitySuggestion: capacitySuggestionFor(profile, model, state.catalog.index, listingEntry),
         // 即使没有梯子建议，也给出 compat 建议：用户手写档位时同样需要
         // thinkingFormat / supportsDeveloperRole 这两个"不补就会坏"的键。
-        compatHint: compatHintFor(profile, model),
+        compatHint: compatHintFor(profile, model, route),
         suggestion: suggestion === undefined
           ? undefined
           : {

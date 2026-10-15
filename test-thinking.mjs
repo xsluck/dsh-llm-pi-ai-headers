@@ -336,5 +336,40 @@ test("kimi-coding 那种组合不再产生会被拒的 compat", () => {
   assert.equal(inferCompat(route, { thinkingFormat: "deepseek", supportsReasoningEffort: true }), undefined);
 });
 
+console.log("按 route 名查内置目录判定协议（deepseek vs kimi-coding 的真实差别）");
+test("内置单协议 provider：route 名即可判定，即使 api 没写", () => {
+  assert.equal(resolveProtocol({}, "deepseek"), "openai-completions");
+  assert.equal(resolveProtocol({}, "zai-coding-cn"), "openai-completions");
+  assert.equal(resolveProtocol({}, "kimi-coding"), "anthropic-messages");
+  assert.equal(resolveProtocol({}, "minimax"), "anthropic-messages");
+  assert.equal(resolveProtocol({}, "moonshotai-cn"), "openai-completions");
+});
+test("内置目录 + 未声明 api：deepseek 会补 compat，kimi-coding 不会", () => {
+  // deepseek 内置是 openai-completions：不写 api 也判定得出，可以补 compat。
+  // 但 isSelfHostedRelay 需要 baseURL 才算自建，所以这里只断言"会写 compat"。
+  const deepseek = compatHintFor({ baseURL: "https://api.deepseek.com/v1" }, { id: "k3" }, "deepseek");
+  assert.ok(deepseek !== undefined, "deepseek 应能补 compat");
+  assert.equal(deepseek.supportsReasoningEffort, true);
+  // 官方域名不钉 developer 角色
+  assert.equal(deepseek.supportsDeveloperRole, undefined);
+  // kimi-coding 内置是 anthropic-messages：一个键都不写
+  assert.equal(compatHintFor({ baseURL: "https://api.kimi.com/coding" }, { id: "k3" }, "kimi-coding"), undefined);
+});
+test("显式 api 永远优先于内置目录", () => {
+  assert.equal(resolveProtocol({ api: "anthropic-messages" }, "deepseek"), "anthropic-messages");
+  assert.equal(resolveProtocol({ api: "openai-completions" }, "kimi-coding"), "openai-completions");
+});
+test("内置多协议 provider（opencode）判不出 → unknown → 不写", () => {
+  assert.equal(resolveProtocol({}, "opencode"), "unknown");
+  assert.equal(compatHintFor({}, { id: "x" }, "opencode"), undefined);
+});
+test("无内置名字 + 自建地址 → openai-completions", () => {
+  assert.equal(resolveProtocol({ baseURL: "http://192.168.0.127:8080/v1" }, "bc"), "openai-completions");
+  assert.equal(resolveProtocol({ baseURL: "http://47.99.112.251:8788/v1" }, "workbuddy-local"), "openai-completions");
+});
+test("无内置名字 + 无地址 → unknown（保守）", () => {
+  assert.equal(resolveProtocol({}, "some-made-up-route"), "unknown");
+});
+
 if (process.exitCode === undefined) console.log("\ntest-thinking: 全部 " + passed + " 项通过");
 else console.error("\ntest-thinking: 有失败项");

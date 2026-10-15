@@ -393,42 +393,102 @@ function isSelfHostedEndpointUrl(baseURL) {
 }
 
 /**
- * 解析该 route 实际生效的线上协议。
+ * pi-ai 内置目录里，**每个 provider 各自只说一种协议**的名字 → 协议。
  *
- * 官方 llm-pi-ai 的 `api` 可以缺省，解析顺序是：
+ * 来源：`@earendil-works/pi-ai/dist/providers/data/*.json`（每个文件顶层就是
+ * 协议名）。官方解析协议的顺序是
  *   api = request.api ?? base?.api ?? routeApi
- * `base` 来自 pi-ai 内置目录——route 名一旦撞上内置 provider（例如
- * "kimi-coding"，Kimi 在目录里是 anthropic-messages）就会顶上来。所以
- * "api 没写"绝不等于 "openai-completions"：
- *   - 能判定 → 协议名；
- *   - 判不出 → "unknown"，调用方必须保守处理（宁可少补键，也不能让整次
- *     保存被官方校验拒绝——实测：给 kimi-coding/k3 写 supportsReasoningEffort
- *     会被拒，因为官方把它解析成了 anthropic-messages）。
+ *   routeApi = sharedCatalogApi(defaults)  // 该路由目录里所有模型的 api 去重
+ * 所以 route 名一旦命中内置目录，**即使 api 没写也完全能判定**——这正是
+ * `dpseek`（openai-completions）和 `kimi-coding`（anthropic-messages）的差别
+ * 所在。多协议的路由（opencode 有 4 种）去重后是 undefined，必须显式声明，
+ * 这种才真的判不出来。
+ *
+ * 只收"整个 provider 只有一种 api"的名字；多协议的一律不收，避免猜错。
+ */
+const BUILTIN_ROUTE_PROTOCOLS = Object.freeze({
+  "amazon-bedrock": "anthropic-messages",
+  anthropic: "anthropic-messages",
+  "ant-ling": "anthropic-messages",
+  "azure-openai-responses": "openai-responses",
+  baseten: "openai-completions",
+  cerebras: "openai-completions",
+  chutes: "openai-completions",
+  deepseek: "openai-completions",
+  "github-copilot": undefined,
+  "google-vertex": "google-generative-ai",
+  google: "google-generative-ai",
+  groq: "openai-completions",
+  huggingface: "openai-completions",
+  "kimi-coding": "anthropic-messages",
+  meta: "openai-completions",
+  minimax: "anthropic-messages",
+  "minimax-cn": "anthropic-messages",
+  mistral: "openai-completions",
+  "moonshotai-cn": "openai-completions",
+  moonshotai: "openai-completions",
+  nvidia: "openai-completions",
+  openai: "openai-responses",
+  openrouter: undefined,
+  "opencode-go": undefined,
+  opencode: undefined,
+  together: "openai-completions",
+  xai: "openai-completions",
+  zai: "openai-completions",
+  "zai-coding-cn": "openai-completions",
+  "cloudflare-ai-gateway": undefined,
+  "cloudflare-workers-ai": "openai-completions",
+  fireworks: undefined,
+});
+
+/**
+ * 解析该 route 实际生效的线上协议。顺序与官方一致：
+ *
+ *   1. 路由自己声明的 `api` —— 最权威；
+ *   2. **route 名命中 pi-ai 内置目录且该 provider 只有一种协议** —— 这也是
+ *      官方 `base?.api ?? routeApi` 的实际结果（如 `deepseek` →
+ *      openai-completions、`kimi-coding` → anthropic-messages）；
+ *   3. `baseURL` 明确指向自建/中转地址 → openai-completions（目录不认识这些
+ *      地址，官方会落到协议表首项）；
+ *   4. 以上都定不了 → "unknown"，调用方必须保守处理（不写 compat），
+ *      因为写错一个键会让整次保存被官方拒绝。
+ *
  * @param route - provider profile（api / baseURL）
+ * @param routeName - 路由名（即 providers 字典的键）；命中内置目录时需要
  * @returns 协议名，或 "unknown"
  */
-export function resolveProtocol(route) {
+export function resolveProtocol(route, routeName) {
   const declared = typeof route?.api === "string" && route.api.length > 0 ? route.api : undefined;
   if (declared !== undefined) return declared;
-  const baseURL = typeof route?.baseURL === "string" ? route.baseURL.toLowerCase() : "";
-  if (baseURL.length === 0) return "unknown";
-  if (baseURL.includes("anthropic")) return "anthropic-messages";
-  return isSelfHostedEndpointUrl(baseURL) ? "openai-completions" : "unknown";
+
+  const name = typeof routeName === "string" ? routeName.toLowerCase() : "";
+  if (Object.prototype.hasOwnProperty.call(BUILTIN_ROUTE_PROTOCOLS, name)) {
+    const builtin = BUILTIN_ROUTE_PROTOCOLS[name];
+    if (builtin !== undefined) return builtin;
+    return "unknown"; // 目录里有这个名字但多协议并存，必须显式声明
+  }
+
+  const baseURL = typeof route?.baseURL === "string" ? route.baseURL : "";
+  if (baseURL.length > 0) {
+    if (baseURL.toLowerCase().includes("anthropic")) return "anthropic-messages";
+    if (isSelfHostedEndpointUrl(baseURL)) return "openai-completions";
+  }
+  return "unknown";
 }
 
 /**
  * 该 route 是否**确定**吃 openai-completions 那套 compat 开关。
  * 判不出来一律 false：少补一个键只是少个功能，写错一个键会让整次保存失败。
  */
-function takesOpenAiCompat(route) {
-  return resolveProtocol(route) === "openai-completions";
+function takesOpenAiCompat(route, routeName) {
+  return resolveProtocol(route, routeName) === "openai-completions";
 }
 
 /** 是否自建/中转端点（需要把系统提示词 role 钉回 system）。 */
-export function isSelfHostedRelay(route) {
+export function isSelfHostedRelay(route, routeName) {
   const baseURL = route?.baseURL;
   if (typeof baseURL !== "string" || baseURL.length === 0) return false;
-  const protocol = resolveProtocol(route);
+  const protocol = resolveProtocol(route, routeName);
   return protocol === "openai-completions" && isSelfHostedEndpointUrl(baseURL);
 }
 
@@ -446,17 +506,17 @@ export function inferThinkingFormat(route) {
  * @param hint - 知识库或外部目录给出的 compat 建议
  * @returns 需要合并进模型 compat 的键值，或 undefined
  */
-export function inferCompat(route, hint) {
+export function inferCompat(route, hint, routeName) {
   // 协议不是 openai-completions（或判不出来）时，一个 compat 键都不写：
   // anthropic-messages 认的是 supportsEagerToolInputStreaming /
   // supportsCacheControlOnTools 等另一套开关，写错会被官方整体拒绝。
-  if (!takesOpenAiCompat(route)) return undefined;
+  if (!takesOpenAiCompat(route, routeName)) return undefined;
   const patch = {};
   const format = hint?.thinkingFormat ?? inferThinkingFormat(route);
   if (format !== undefined) patch.thinkingFormat = format;
   if (hint?.supportsReasoningEffort !== undefined) patch.supportsReasoningEffort = hint.supportsReasoningEffort;
   else if (format !== undefined) patch.supportsReasoningEffort = true;
-  if (isSelfHostedRelay(route)) patch.supportsDeveloperRole = false;
+  if (isSelfHostedRelay(route, routeName)) patch.supportsDeveloperRole = false;
   return Object.keys(patch).length > 0 ? patch : undefined;
 }
 
@@ -668,7 +728,7 @@ export function analyzeListingEntry(entry) {
  * 档位与容量分开返回：端点可能只说了容量没说档位（或反之），
  * 两者各自独立生效——`capacities` 即使在没有档位建议时也可以有值。
  */
-export function suggestFromListing(route, model, entry) {
+export function suggestFromListing(route, model, entry, routeName) {
   const signal = analyzeListingEntry(entry);
   const capacities = capacitiesFromSignal(signal, "gateway");
   if (signal.reasoning !== true) {
@@ -695,7 +755,7 @@ export function suggestFromListing(route, model, entry) {
     mode: "custom",
     weak,
     efforts,
-    compat: inferCompat(route, { thinkingFormat: hint?.thinkingFormat ?? inferThinkingFormat(route) }),
+    compat: inferCompat(route, { thinkingFormat: hint?.thinkingFormat ?? inferThinkingFormat(route) }, routeName),
     capacities,
     source: "gateway",
     confidence: weak ? "low" : CONFIDENCE.gateway,
@@ -885,7 +945,7 @@ export function matchExternal(index, model) {
  * {@link buildSuggestion} 放在内置知识库之后使用，避免用一条通用梯子
  * 盖掉更贴合家族的知识库条目。
  */
-export function suggestFromExternal(route, model, index) {
+export function suggestFromExternal(route, model, index, routeName) {
   if (index === undefined || index.size === 0) return undefined;
   const hit = matchExternalDetailed(index, model);
   if (hit === undefined) return undefined;
@@ -914,7 +974,7 @@ export function suggestFromExternal(route, model, index) {
       mode: "custom",
       weak: true,
       efforts: conservative,
-      compat: inferCompat(route, { thinkingFormat: hint?.thinkingFormat ?? inferThinkingFormat(route) }),
+      compat: inferCompat(route, { thinkingFormat: hint?.thinkingFormat ?? inferThinkingFormat(route) }, routeName),
       capacities,
       source: "external",
       confidence: "low",
@@ -930,7 +990,7 @@ export function suggestFromExternal(route, model, index) {
   return {
     mode: "custom",
     efforts,
-    compat: inferCompat(route, { thinkingFormat: hint?.thinkingFormat ?? inferThinkingFormat(route) }),
+    compat: inferCompat(route, { thinkingFormat: hint?.thinkingFormat ?? inferThinkingFormat(route) }, routeName),
     input: hint?.input,
     capacities,
     source: "external",
@@ -1005,12 +1065,12 @@ export function capacitySuggestionFor(route, model, externalIndex, listingEntry)
  * @param options.externalIndex - buildExternalIndex 的结果（可缺）
  */
 export function buildSuggestion(options) {
-  const { route, model, listingEntry, externalIndex } = options;
+  const { route, model, listingEntry, externalIndex, routeName } = options;
 
-  const fromGateway = listingEntry === undefined ? undefined : suggestFromListing(route, model, listingEntry);
+  const fromGateway = listingEntry === undefined ? undefined : suggestFromListing(route, model, listingEntry, routeName);
   if (fromGateway !== undefined && fromGateway.weak !== true) return fromGateway;
 
-  const fromExternal = suggestFromExternal(route, model, externalIndex);
+  const fromExternal = suggestFromExternal(route, model, externalIndex, routeName);
   if (fromExternal !== undefined && fromExternal.weak !== true) return fromExternal;
 
   const entry = matchKnowledge(model);
@@ -1022,7 +1082,7 @@ export function buildSuggestion(options) {
       return {
         mode: "custom",
         efforts,
-        compat: inferCompat(route, { ...entry.compat, thinkingFormat: entry.compat?.thinkingFormat ?? inferThinkingFormat(route) }),
+        compat: inferCompat(route, { ...entry.compat, thinkingFormat: entry.compat?.thinkingFormat ?? inferThinkingFormat(route) }, routeName),
         capacities: knowledgeCapacities,
         input: entry.input,
         source: "knowledge",
@@ -1066,9 +1126,9 @@ export function buildSuggestion(options) {
  * @param route - provider profile（api / baseURL）
  * @param model - 模型条目（id / name）
  */
-export function compatHintFor(route, model) {
+export function compatHintFor(route, model, routeName) {
   const hint = familyHint(model);
-  return inferCompat(route, { thinkingFormat: hint?.thinkingFormat ?? inferThinkingFormat(route) });
+  return inferCompat(route, { thinkingFormat: hint?.thinkingFormat ?? inferThinkingFormat(route) }, routeName);
 }
 
 /**
