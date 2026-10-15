@@ -63,6 +63,8 @@ const PROFILE = {
     { id: "c", reasoningEfforts: { off: "none", high: "high" } },
     { id: "d", reasoningEfforts: {}, compat: { thinkingFormat: "zai" } },
     { id: "e", contextWindow: 262144, maxTokens: 65536, input: ["text", "image"] },
+    { id: "f", input: ["text"] },
+    { id: "g", input: ["text", "image"] },
   ],
 };
 
@@ -227,6 +229,42 @@ test("rowChanged 会因容量变化而触发（保存按钮才会亮）", () => 
   const row = { mode: "inherit", declaredMode: "inherit", levels: {}, contextWindow: "1000", maxTokens: "", input: ["text"], declaredContextWindow: undefined, declaredMaxTokens: undefined, declaredInput: undefined };
   assert.equal(t.rowChanged(row), true);
   assert.equal(t.rowChanged({ ...row, contextWindow: "", declaredContextWindow: undefined }), false);
+});
+
+console.log("视觉能力预填（中断转配置几乎都带 input:[\"text\"]，不能被它挡住）");
+test("已声明 input:['text'] 的模型能被识别结果升级为 text+image", () => {
+  const rows = t.thinkingRowsOf(PROFILE);
+  const fIndex = PROFILE.models.findIndex((m) => m.id === "f");
+  const merged = t.withSuggestions(rows, {
+    models: [{ id: "f", capacitySuggestion: { contextWindow: 1000000, input: ["text", "image"], source: "external" } }],
+  });
+  assert.deepEqual(merged[fIndex].input, ["text", "image"]);
+  assert.equal(merged[fIndex].prefilledCapacity, true);
+  assert.equal(merged[fIndex].contextWindow, "1000000");
+});
+test("用户显式声明过 image 的模型不被覆盖", () => {
+  const rows = t.thinkingRowsOf(PROFILE);
+  const gIndex = PROFILE.models.findIndex((m) => m.id === "g");
+  const merged = t.withSuggestions(rows, {
+    models: [{ id: "g", capacitySuggestion: { input: ["text"], source: "external" } }],
+  });
+  // g 已声明 text+image；识别说只有 text 也不动它（不降级用户声明）
+  assert.deepEqual(merged[gIndex].input, ["text", "image"]);
+});
+test("识别结果与现状相同则不标记预填", () => {
+  const rows = t.thinkingRowsOf(PROFILE);
+  const fIndex = PROFILE.models.findIndex((m) => m.id === "f");
+  const merged = t.withSuggestions(rows, {
+    models: [{ id: "f", capacitySuggestion: { input: ["text"], source: "external" } }],
+  });
+  assert.deepEqual(merged[fIndex].input, ["text"]);
+  assert.notEqual(merged[fIndex].prefilledCapacity, true);
+});
+test("sameInput 忽略顺序与重复", () => {
+  assert.equal(t.sameInput(["text", "image"], ["image", "text"]), true);
+  assert.equal(t.sameInput(["text", "image", "image"], ["text", "image"]), true);
+  assert.equal(t.sameInput(["text"], ["text", "image"]), false);
+  assert.equal(t.sameInput(undefined, []), true);
 });
 
 if (process.exitCode === undefined) console.log("\ntest-client: 全部 " + passed + " 项通过");
