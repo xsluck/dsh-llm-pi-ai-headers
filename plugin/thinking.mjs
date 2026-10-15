@@ -380,11 +380,8 @@ const OFFICIAL_DOMAINS = [
  * reasoningEfforts（reasoning=true），系统提示词的 role 就会从 system 变
  * developer，多数自建网关直接 400——所以必须钉回 system。
  */
-export function isSelfHostedRelay(route) {
-  const api = String(route?.api ?? "openai-completions").toLowerCase();
-  if (api !== "openai-completions") return false;
-  const baseURL = route?.baseURL;
-  if (typeof baseURL !== "string" || baseURL.length === 0) return false;
+/** baseURL 是否指向 pi-ai 内置目录不认识的自建/中转端点。 */
+function isSelfHostedEndpointUrl(baseURL) {
   let host;
   try {
     host = new URL(baseURL).hostname.toLowerCase();
@@ -393,6 +390,46 @@ export function isSelfHostedRelay(route) {
   }
   if (!host.includes(".")) return false;
   return !OFFICIAL_DOMAINS.some((root) => host === root || host.endsWith("." + root));
+}
+
+/**
+ * 解析该 route 实际生效的线上协议。
+ *
+ * 官方 llm-pi-ai 的 `api` 可以缺省，解析顺序是：
+ *   api = request.api ?? base?.api ?? routeApi
+ * `base` 来自 pi-ai 内置目录——route 名一旦撞上内置 provider（例如
+ * "kimi-coding"，Kimi 在目录里是 anthropic-messages）就会顶上来。所以
+ * "api 没写"绝不等于 "openai-completions"：
+ *   - 能判定 → 协议名；
+ *   - 判不出 → "unknown"，调用方必须保守处理（宁可少补键，也不能让整次
+ *     保存被官方校验拒绝——实测：给 kimi-coding/k3 写 supportsReasoningEffort
+ *     会被拒，因为官方把它解析成了 anthropic-messages）。
+ * @param route - provider profile（api / baseURL）
+ * @returns 协议名，或 "unknown"
+ */
+export function resolveProtocol(route) {
+  const declared = typeof route?.api === "string" && route.api.length > 0 ? route.api : undefined;
+  if (declared !== undefined) return declared;
+  const baseURL = typeof route?.baseURL === "string" ? route.baseURL.toLowerCase() : "";
+  if (baseURL.length === 0) return "unknown";
+  if (baseURL.includes("anthropic")) return "anthropic-messages";
+  return isSelfHostedEndpointUrl(baseURL) ? "openai-completions" : "unknown";
+}
+
+/**
+ * 该 route 是否**确定**吃 openai-completions 那套 compat 开关。
+ * 判不出来一律 false：少补一个键只是少个功能，写错一个键会让整次保存失败。
+ */
+function takesOpenAiCompat(route) {
+  return resolveProtocol(route) === "openai-completions";
+}
+
+/** 是否自建/中转端点（需要把系统提示词 role 钉回 system）。 */
+export function isSelfHostedRelay(route) {
+  const baseURL = route?.baseURL;
+  if (typeof baseURL !== "string" || baseURL.length === 0) return false;
+  const protocol = resolveProtocol(route);
+  return protocol === "openai-completions" && isSelfHostedEndpointUrl(baseURL);
 }
 
 /** 从 route 的 baseURL / 名字推断线上方言。 */
@@ -410,6 +447,10 @@ export function inferThinkingFormat(route) {
  * @returns 需要合并进模型 compat 的键值，或 undefined
  */
 export function inferCompat(route, hint) {
+  // 协议不是 openai-completions（或判不出来）时，一个 compat 键都不写：
+  // anthropic-messages 认的是 supportsEagerToolInputStreaming /
+  // supportsCacheControlOnTools 等另一套开关，写错会被官方整体拒绝。
+  if (!takesOpenAiCompat(route)) return undefined;
   const patch = {};
   const format = hint?.thinkingFormat ?? inferThinkingFormat(route);
   if (format !== undefined) patch.thinkingFormat = format;

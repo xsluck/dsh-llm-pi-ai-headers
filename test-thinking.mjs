@@ -11,9 +11,11 @@ import {
   toHarnessModalities,
   buildExternalIndex,
   buildSuggestion,
+  compatHintFor,
   describeEfforts,
   inferCompat,
   isSelfHostedRelay,
+  resolveProtocol,
   isSendableLadder,
   ladderFromLevels,
   matchKnowledge,
@@ -305,6 +307,33 @@ test("max_input_tokens / max_completion_tokens 也能读", () => {
 test("网关同时给 reasoning_efforts 数组时仍走既有布尔路径（不误判）", () => {
   const signal = analyzeListingEntry({ id: "i", supports_reasoning: true, reasoning_efforts: ["high"] });
   assert.equal(signal.reasoning, true);
+});
+
+console.log("协议闸门：compat 只能写给确定吃它的协议（kimi-coding 实测翻车点）");
+test("anthropic-messages 显式声明 → 一个 compat 键都不写", () => {
+  assert.equal(inferCompat({ api: "anthropic-messages", baseURL: "https://x/v1" }, { thinkingFormat: "deepseek" }), undefined);
+});
+test("api 未声明且无 baseURL → unknown，不写 compat", () => {
+  assert.equal(resolveProtocol({ api: undefined, baseURL: undefined }), "unknown");
+  assert.equal(compatHintFor({ api: undefined, baseURL: undefined }, { id: "k3" }), undefined);
+});
+test("api 未声明但 baseURL 是自建地址 → 判为 openai-completions，可写", () => {
+  const route = { api: undefined, baseURL: "http://192.168.0.127:8080/v1" };
+  assert.equal(resolveProtocol(route), "openai-completions");
+  assert.equal(compatHintFor(route, { id: "k3" }).supportsDeveloperRole, false);
+});
+test("api 未声明 + baseURL 含 anthropic → anthropic-messages", () => {
+  assert.equal(resolveProtocol({ api: undefined, baseURL: "https://api.moonshot.cn/anthropic" }), "anthropic-messages");
+});
+test("显式 openai-completions 的自建路由仍会补 developer 角色引脚", () => {
+  const compat = compatHintFor({ api: "openai-completions", baseURL: "http://47.99.112.251:8788/v1" }, { id: "k3" });
+  assert.equal(compat.supportsDeveloperRole, false);
+});
+test("kimi-coding 那种组合不再产生会被拒的 compat", () => {
+  // route 名撞 pi-ai 内置 provider（Kimi 在目录里是 anthropic-messages），
+  // api 又没声明 —— 这种必须判 unknown 并闭嘴。
+  const route = { api: undefined, baseURL: undefined, displayName: "kimi-coding" };
+  assert.equal(inferCompat(route, { thinkingFormat: "deepseek", supportsReasoningEffort: true }), undefined);
 });
 
 if (process.exitCode === undefined) console.log("\ntest-thinking: 全部 " + passed + " 项通过");
