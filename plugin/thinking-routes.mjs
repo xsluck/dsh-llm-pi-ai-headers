@@ -22,6 +22,7 @@ import { dirname, join } from 'node:path'
 import {
   buildExternalIndex,
   buildSuggestion,
+  capacitySuggestionFor,
   compatHintFor,
   describeEfforts,
   isSendableLadder,
@@ -289,6 +290,15 @@ export function makeThinkingRoutes(options) {
         name: typeof model.name === 'string' ? model.name : undefined,
         state: describeEfforts(model),
         compat: model.compat !== null && typeof model.compat === 'object' ? model.compat : undefined,
+        // 文档里当前声明的容量/类型（UI 显示"当前值"用）
+        declared: {
+          contextWindow: typeof model.contextWindow === 'number' ? model.contextWindow : undefined,
+          maxTokens: typeof model.maxTokens === 'number' ? model.maxTokens : undefined,
+          input: Array.isArray(model.input) ? model.input : undefined,
+        },
+        // 容量/类型建议与档位建议分开算：两者可以来自不同层（例如网关只报
+        // context_length，档位来自目录）。
+        capacitySuggestion: capacitySuggestionFor(profile, model, state.catalog.index, listingEntry),
         // 即使没有梯子建议，也给出 compat 建议：用户手写档位时同样需要
         // thinkingFormat / supportsDeveloperRole 这两个"不补就会坏"的键。
         compatHint: compatHintFor(profile, model),
@@ -297,6 +307,7 @@ export function makeThinkingRoutes(options) {
           : {
               efforts: suggestion.efforts,
               compat: suggestion.compat,
+              capacities: suggestion.capacities,
               source: suggestion.source,
               confidence: suggestion.confidence,
               matched: suggestion.matched,

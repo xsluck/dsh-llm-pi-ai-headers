@@ -16,6 +16,7 @@
 - **配置入口保持官方原样**：写的是官方 `llm-pi-ai.providers.<route>.headers` / `.retryPolicy` 字段，`settings.yaml` 手写与 UI 编辑完全等价；Models 页面、设置页面均为官方原样
 - **User-Agent 自动补回**：官方适配器把 `user-agent` 当作 attribution 保留头过滤掉（`requestHeaders()`），本插件在底层 pi-ai 的 `transformHeaders` 钩子（所有头合并完成之后）把它补进最终请求头；其余自定义头官方原样发送
 - **模型级思考强度（reasoning effort）**：同一分节里按提供商展开模型列表，**逐模型**配置推理档位（不配置=继承 / 不支持推理 / 自定义档位 + 每档线上写法）。写的是官方 `providers.<route>.models[].reasoningEfforts`，并自动补 `compat`（`thinkingFormat` / `supportsReasoningEffort` / 非官方域名的 `supportsDeveloperRole:false`）——少了最后这一项，模型一旦声明推理档位，系统提示词 role 会从 `system` 变成 `developer`，多数自建网关直接 400
+- **模型级容量与支持类型**：同一行里还能编辑官方 `modelFields` 的另外三项——`contextWindow`（上下文长度）、`maxTokens`（最大输出）、`input`（支持类型：文本/图片），与档位一样自动识别、只预填、手动保存
 - **三层自动识别**：① 该提供商自己的 `/models` 探测（host 代理、复用 Key 池鉴权，最权威）② 公共目录（OpenRouter / models.dev / LiteLLM，按需拉取 + 7 天落盘缓存，离线自动降级）③ 内置名字知识库（覆盖中转改写的 id，如裸 `k3`、`hy4-preview-f`）。冲突时按 ①>②>③ 取值，每条建议标明来源与置信度
 - **识别结果只预填、不自动落盘**：打开分节时把建议预填成待保存状态，必须点「保存」才写入；已声明的模型绝不自动改
 - **官方适配器全部能力保留**：reasoning 回传、SSE 解析、工具调用、上下文窗口判定等，与未装插件时完全一致
@@ -153,7 +154,8 @@ node install.mjs
 6. 如需调整失败重试：在下方「重试策略」区修改模式/次数，用中文标签**勾选**可重试错误码（可另填自定义码），并调整退避参数（默认限次数 2 次，可一键恢复默认）
 7. **思考强度**：在「思考强度（模型级）」区逐个模型选择三态之一——`不配置（继承）` / `不支持推理` / `自定义档位`；自定义时勾选档位（`off`/`minimal`/`low`/`medium`/`high`/`xhigh`/`max`）并填每档的**线上写法**（`off` 留空 = 不传参数；填 `none` = 发 `reasoning_effort: none`）。每行会显示建议来源徽标与「用建议填充」按钮
 8. 需要自动识别时点「**自动识别本提供商**」（联网探测该网关的 `/models`）或「**更新外部目录**」（拉取三个公共目录，约 9 MB，缓存 7 天）；识别结果只预填，仍需保存才生效
-9. 保存
+9. **容量与类型**：同一模型行下方可编辑 `上下文长度` / `最大输出` / `支持类型`（文本、图片）；留空 = 不声明（用官方默认），输入框的 placeholder 会显示识别到的建议值，点「用建议填充」一次写入三项
+10. 保存
 
 请求头合并顺序：官方 `attributionHeaders`（身份头）→ `Authorization` → `headers`（settings.yaml / UI 写入，官方原样发送，其中 `user-agent` 被官方过滤）→ 本插件 `transformHeaders` 把 `user-agent` 补回 + Key 轮询注入（最终覆盖）。轮到主 Key 时插件**不**改写认证头，官方适配器按 `apiKeyEnv` 从凭据库取值。
 

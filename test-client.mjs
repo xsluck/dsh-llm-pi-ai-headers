@@ -62,6 +62,7 @@ const PROFILE = {
     { id: "b", reasoningEfforts: false },
     { id: "c", reasoningEfforts: { off: "none", high: "high" } },
     { id: "d", reasoningEfforts: {}, compat: { thinkingFormat: "zai" } },
+    { id: "e", contextWindow: 262144, maxTokens: 65536, input: ["text", "image"] },
   ],
 };
 
@@ -74,7 +75,7 @@ test("空字典视为未声明（官方 schema 不接受空梯子）", () => ass
 console.log("由 profile 生成草稿行");
 test("行数与模型一致，且带出 declaredCompat", () => {
   const rows = t.thinkingRowsOf(PROFILE);
-  assert.equal(rows.length, 4);
+  assert.equal(rows.length, PROFILE.models.length);
   assert.deepEqual(rows[3].declaredCompat, { thinkingFormat: "zai" });
   assert.deepEqual(rows[2].levels, { off: "none", high: "high" });
 });
@@ -166,6 +167,67 @@ await (async () => {
   passed += 3;
   console.log("  ✓ 404/502 纯文本降级为结构化失败，正常 JSON 照常解析");
 })();
+
+console.log("容量与支持类型（contextWindow / maxTokens / input）");
+test("草稿行带出已声明的容量，未声明的为空串/默认 text", () => {
+  const rows = t.thinkingRowsOf(PROFILE);
+  assert.equal(rows[4].contextWindow, "262144");
+  assert.equal(rows[4].maxTokens, "65536");
+  assert.deepEqual(rows[4].input, ["text", "image"]);
+  assert.equal(rows[0].contextWindow, "");
+  assert.deepEqual(rows[0].input, ["text"]);
+});
+test("容量预填只填未声明的项，已声明的不动", () => {
+  const rows = t.thinkingRowsOf(PROFILE);
+  const merged = t.withSuggestions(rows, {
+    models: [
+      { id: "a", capacitySuggestion: { contextWindow: 1000000, maxTokens: 128000, input: ["text", "image"], source: "external" } },
+      { id: "e", capacitySuggestion: { contextWindow: 999, source: "external" } },
+    ],
+  });
+  assert.equal(merged[0].contextWindow, "1000000");
+  assert.equal(merged[0].maxTokens, "128000");
+  assert.deepEqual(merged[0].input, ["text", "image"]);
+  assert.equal(merged[0].prefilledCapacity, true);
+  // e 已经声明过 262144 / 65536 → 不被 999 覆盖
+  assert.equal(merged[4].contextWindow, "262144");
+  assert.equal(merged[4].maxTokens, "65536");
+});
+test("端点只给容量不给档位时，只预填容量不碰档位", () => {
+  const rows = t.thinkingRowsOf(PROFILE);
+  const merged = t.withSuggestions(rows, {
+    models: [{ id: "a", suggestion: { efforts: undefined, source: "gateway" }, capacitySuggestion: { contextWindow: 4096, source: "gateway" } }],
+  });
+  assert.equal(merged[0].contextWindow, "4096");
+  assert.equal(merged[0].mode, "inherit");
+  assert.deepEqual(merged[0].levels, {});
+});
+test("容量文本解析：空串/非法/负数 → undefined（不写）", () => {
+  assert.equal(t.capacityNumber(""), undefined);
+  assert.equal(t.capacityNumber("   "), undefined);
+  assert.equal(t.capacityNumber("abc"), undefined);
+  assert.equal(t.capacityNumber("-5"), undefined);
+  assert.equal(t.capacityNumber("0"), undefined);
+  assert.equal(t.capacityNumber("262144"), 262144);
+  assert.equal(t.capacityNumber("131072.9"), 131072);
+});
+test("容量改动判定：三项任一变化即算改动", () => {
+  const base = { contextWindow: "100", maxTokens: "10", input: ["text"], declaredContextWindow: 100, declaredMaxTokens: 10, declaredInput: ["text"] };
+  assert.equal(t.capacityChanged(base), false);
+  assert.equal(t.capacityChanged({ ...base, contextWindow: "200" }), true);
+  assert.equal(t.capacityChanged({ ...base, maxTokens: "20" }), true);
+  assert.equal(t.capacityChanged({ ...base, input: ["text", "image"] }), true);
+  assert.equal(t.capacityChanged({ ...base, contextWindow: "" }), true);
+});
+test("未声明的 input 视为 [text]（不产生无意义写入）", () => {
+  const row = { contextWindow: "", maxTokens: "", input: ["text"], declaredContextWindow: undefined, declaredMaxTokens: undefined, declaredInput: undefined };
+  assert.equal(t.capacityChanged(row), false);
+});
+test("rowChanged 会因容量变化而触发（保存按钮才会亮）", () => {
+  const row = { mode: "inherit", declaredMode: "inherit", levels: {}, contextWindow: "1000", maxTokens: "", input: ["text"], declaredContextWindow: undefined, declaredMaxTokens: undefined, declaredInput: undefined };
+  assert.equal(t.rowChanged(row), true);
+  assert.equal(t.rowChanged({ ...row, contextWindow: "", declaredContextWindow: undefined }), false);
+});
 
 if (process.exitCode === undefined) console.log("\ntest-client: 全部 " + passed + " 项通过");
 else console.error("\ntest-client: 有失败项");

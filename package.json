@@ -1,7 +1,7 @@
 {
   "name": "dsh-llm-pi-ai-headers",
-  "version": "0.7.0",
-  "description": "DeepSeek Harness LLM User-Agent/header injector with key pool round-robin and per-model thinking-effort configuration: keeps the official llm-pi-ai adapter, re-injects user-agent, rotates keys, and edits each model's reasoningEfforts/compat with three-source auto-detection. | DeepSeek Harness LLM 请求头注入器 + Key 轮询 + 模型级思考强度配置：保留官方适配器，补回 User-Agent，多 Key 轮询，并在设置页逐模型配置推理档位（网关探测 / 外部目录 / 内置知识库三层自动识别）。",
+  "version": "0.8.0",
+  "description": "DeepSeek Harness LLM plugin: per-provider headers + key rotation, and per-model capability editing (reasoningEfforts, contextWindow, maxTokens, input modalities) with three-source auto-detection (gateway /models > public catalogs > built-in knowledge). | DSH LLM 插件：按提供商请求头 + Key 轮询，以及逐模型能力编辑（思考强度、上下文长度、最大输出、支持类型），三层自动识别（网关探测 > 公共目录 > 内置知识库）。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

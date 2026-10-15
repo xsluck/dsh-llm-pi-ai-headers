@@ -50,6 +50,8 @@ const KB = [
     patterns: ["deepseek-v4-flash-vision", "deepseek-v4-vision", "vision-exp"],
     efforts: { off: "none", low: "low", high: "high", max: "max" },
     compat: { thinkingFormat: "deepseek", supportsReasoningEffort: true },
+    contextWindow: 1048576,
+    maxTokens: 384000,
     input: ["text", "image"],
   },
   {
@@ -57,6 +59,8 @@ const KB = [
     patterns: ["deepseek-v4.1-flash", "deepseek-v4.1", "deepseek-flash"],
     efforts: { off: "none", low: "low", high: "high", max: "max" },
     compat: { thinkingFormat: "deepseek", supportsReasoningEffort: true },
+    contextWindow: 1048576,
+    maxTokens: 384000,
     input: ["text", "image"],
   },
   {
@@ -64,6 +68,8 @@ const KB = [
     patterns: ["deepseek-v4", "deepseek-v3.2", "deepseek-reasoner"],
     efforts: { off: "none", low: "low", high: "high", max: "max" },
     compat: { thinkingFormat: "deepseek", supportsReasoningEffort: true },
+    contextWindow: 1048576,
+    maxTokens: 65536,
     input: ["text"],
   },
   {
@@ -71,6 +77,8 @@ const KB = [
     patterns: ["glm-5.3", "glm-5-3", "glm-5.3-flash"],
     efforts: { low: "low", high: "high", max: "max" },
     compat: { thinkingFormat: "zai", supportsReasoningEffort: true },
+    contextWindow: 1000000,
+    maxTokens: 131072,
     input: ["text"],
   },
   {
@@ -78,6 +86,8 @@ const KB = [
     patterns: ["glm-5.2", "glm-5-2"],
     efforts: { off: "none", minimal: "minimal", low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max" },
     compat: { thinkingFormat: "zai", supportsReasoningEffort: true },
+    contextWindow: 1000000,
+    maxTokens: 131072,
     input: ["text"],
   },
   {
@@ -85,6 +95,8 @@ const KB = [
     patterns: ["glm-4.6v", "glm-4-6v", "glm-4v", "glm-5v"],
     efforts: { off: null, high: "high" },
     compat: { thinkingFormat: "zai", supportsReasoningEffort: true },
+    contextWindow: 128000,
+    maxTokens: 32768,
     input: ["text", "image"],
   },
   {
@@ -92,6 +104,8 @@ const KB = [
     patterns: ["glm-5-turbo", "glm-5", "chatglm"],
     efforts: { off: null, high: "high" },
     compat: { thinkingFormat: "zai", supportsReasoningEffort: true },
+    contextWindow: 200000,
+    maxTokens: 131072,
     input: ["text"],
   },
   {
@@ -99,6 +113,8 @@ const KB = [
     patterns: ["qwen3.8", "qwen-3.8", "qwen3-8"],
     efforts: { off: null, low: "low", medium: "medium", xhigh: "xhigh" },
     compat: { thinkingFormat: "qwen", supportsReasoningEffort: true },
+    contextWindow: 262144,
+    maxTokens: 65536,
     input: ["text"],
   },
   {
@@ -106,6 +122,8 @@ const KB = [
     patterns: ["qwen3.8-flash-next", "qwen3.8-flash", "qwen-local"],
     efforts: { off: null, low: "low", medium: "medium", xhigh: "xhigh" },
     compat: { thinkingFormat: "qwen", supportsReasoningEffort: true },
+    contextWindow: 262144,
+    maxTokens: 65536,
     input: ["text"],
   },
   {
@@ -115,6 +133,8 @@ const KB = [
     patterns: ["kimi-k3", "kimi-for-coding", "moonshot-v1", "k3-256k", "k3"],
     efforts: { off: null, high: "high" },
     compat: { thinkingFormat: "deepseek", supportsReasoningEffort: true },
+    contextWindow: 1048576,
+    maxTokens: 131072,
     input: ["text"],
   },
   {
@@ -122,6 +142,8 @@ const KB = [
     patterns: ["kimi", "moonshot"],
     efforts: { off: null, high: "high" },
     compat: { thinkingFormat: "deepseek", supportsReasoningEffort: true },
+    contextWindow: 262144,
+    maxTokens: 131072,
     input: ["text"],
   },
   {
@@ -129,6 +151,8 @@ const KB = [
     patterns: ["minimax-m3"],
     efforts: { off: null, high: "high" },
     compat: { thinkingFormat: "deepseek", supportsReasoningEffort: true },
+    contextWindow: 1000000,
+    maxTokens: 131072,
     input: ["text", "image"],
   },
   {
@@ -136,6 +160,8 @@ const KB = [
     patterns: ["hy4-preview", "hy-4-preview", "hy4"],
     efforts: { off: "no_think", high: "high" },
     compat: { thinkingFormat: "openai", supportsReasoningEffort: true },
+    contextWindow: 1000000,
+    maxTokens: 64000,
     input: ["text"],
   },
   {
@@ -143,6 +169,8 @@ const KB = [
     patterns: ["hy3", "hunyuan"],
     efforts: { low: "low", high: "high" },
     compat: { thinkingFormat: "openai", supportsReasoningEffort: true },
+    contextWindow: 192000,
+    maxTokens: 64000,
     input: ["text"],
   },
   {
@@ -150,6 +178,8 @@ const KB = [
     patterns: ["gpt-6"],
     efforts: { low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max" },
     compat: { thinkingFormat: "openai", supportsReasoningEffort: true },
+    contextWindow: 1000000,
+    maxTokens: 128000,
     input: ["text", "image"],
   },
   {
@@ -157,6 +187,8 @@ const KB = [
     patterns: ["gpt-5.6"],
     efforts: { off: "none", low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max" },
     compat: { thinkingFormat: "openai", supportsReasoningEffort: true },
+    contextWindow: 1000000,
+    maxTokens: 128000,
     input: ["text", "image"],
   },
   {
@@ -164,6 +196,8 @@ const KB = [
     patterns: ["gpt-5.5"],
     efforts: { off: "none", low: "low", medium: "medium", high: "high", xhigh: "xhigh" },
     compat: { thinkingFormat: "openai", supportsReasoningEffort: true },
+    contextWindow: 400000,
+    maxTokens: 128000,
     input: ["text", "image"],
   },
   {
@@ -171,6 +205,8 @@ const KB = [
     patterns: ["gpt-5.4"],
     efforts: { off: "none", low: "low", medium: "medium", high: "high", xhigh: "xhigh" },
     compat: { thinkingFormat: "openai", supportsReasoningEffort: true },
+    contextWindow: 400000,
+    maxTokens: 128000,
     input: ["text", "image"],
   },
   {
@@ -178,6 +214,8 @@ const KB = [
     patterns: ["gpt-5.3", "gpt-5.2", "gpt-5.1", "gpt-5"],
     efforts: { off: "none", minimal: "minimal", low: "low", medium: "medium", high: "high" },
     compat: { thinkingFormat: "openai", supportsReasoningEffort: true },
+    contextWindow: 400000,
+    maxTokens: 128000,
     input: ["text"],
   },
   {
@@ -185,6 +223,8 @@ const KB = [
     patterns: ["gemini"],
     efforts: { low: "low", medium: "medium", high: "high" },
     compat: { thinkingFormat: "openai", supportsReasoningEffort: true },
+    contextWindow: 1000000,
+    maxTokens: 65536,
     input: ["text", "image"],
   },
   {
@@ -192,6 +232,8 @@ const KB = [
     patterns: ["mimo-v2.6", "mimo-v2-6"],
     efforts: { off: "none", low: "low", medium: "medium", high: "high" },
     compat: { thinkingFormat: "openai", supportsReasoningEffort: true },
+    contextWindow: 1048576,
+    maxTokens: 65536,
     input: ["text", "image"],
   },
   {
@@ -199,6 +241,8 @@ const KB = [
     patterns: ["grok"],
     efforts: { off: "none", low: "low", high: "high" },
     compat: { thinkingFormat: "openai", supportsReasoningEffort: true },
+    contextWindow: 1000000,
+    maxTokens: 65536,
     input: ["text"],
   },
   {
@@ -206,6 +250,8 @@ const KB = [
     patterns: ["claude"],
     efforts: { off: null, low: "low", medium: "medium", high: "high" },
     compat: { thinkingFormat: "openai", supportsReasoningEffort: true },
+    contextWindow: 200000,
+    maxTokens: 64000,
     input: ["text", "image"],
   },
 ];
@@ -421,13 +467,49 @@ export function describeEfforts(model) {
 // ────────────────────────────────────────────────────────────────────────────
 
 /**
- * 解析一个原始 /models 列表条目，读它自己声明的推理能力。
- * 覆盖的字段约定：supported_parameters / supported_features /
- * supports_reasoning / can_reason / reasoning_effort / capabilities。
- * "没说话"必须与"明确不支持"区分开：前者返回 'unknown'。
+ * 把一份任意模态列表收敛到 harness 的 `text` / `image` 词表。
+ *
+ * 端点常声明 `video` / `pdf` / `audio` 这些本 harness 表达不了的模态：
+ * 只要列表里出现 `image` 就认图片能力（多出来的模态忽略，不会因此判错），
+ * 否则退化为 `["text"]`——`text` 是官方默认值，也是唯一合法的空集替身。
+ * @param list - 原始模态列表（任意大小写）
+ * @returns `["text"]` / `["text","image"]` / `["image"]`，无法判断时 undefined
+ */
+export function toHarnessModalities(list) {
+  if (!Array.isArray(list) || list.length === 0) return undefined;
+  const lowered = new Set(list.map((item) => String(item).toLowerCase()));
+  const known = ["text", "image"].filter((item) => lowered.has(item));
+  if (known.length === 0) return undefined;
+  return known;
+}
+
+/** 从任意字段里读一个正整数（用于 contextWindow / maxTokens）。 */
+function positiveInt(value) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  const rounded = Math.trunc(value);
+  return rounded > 0 ? rounded : undefined;
+}
+
+/**
+ * 解析一个原始 /models 列表条目，读它自己声明的能力。
+ * 覆盖字段约定：
+ *   - 推理：supported_parameters / supported_features / supports_reasoning /
+ *     can_reason / reasoning.supported_efforts；
+ *   - 容量：context_length / context_window / contextWindow /
+ *     max_context_length / max_model_len / max_completion_tokens /
+ *     max_output_tokens / top_provider.*；
+ *   - 模态：input_modalities / modalities（对象或数组）/ architecture.input_modalities。
+ * "没说话"必须与"明确不支持"区分开：推理返回 'unknown'，容量/模态返回 undefined。
  */
 export function analyzeListingEntry(entry) {
-  const signal = { reasoning: "unknown", levels: undefined, source: null, input: undefined, contextLength: undefined };
+  const signal = {
+    reasoning: "unknown",
+    levels: undefined,
+    source: null,
+    input: undefined,
+    contextLength: undefined,
+    maxTokens: undefined,
+  };
   if (entry === null || typeof entry !== "object") return signal;
 
   const listFields = ["supported_parameters", "supported_features", "capabilities"];
@@ -466,17 +548,64 @@ export function analyzeListingEntry(entry) {
     }
   }
 
-  const input = entry.input_modalities ?? entry.modalities;
-  if (Array.isArray(input)) signal.input = input.map((item) => String(item).toLowerCase());
-  if (typeof entry.context_length === "number") signal.contextLength = entry.context_length;
+  // ── 模态 ──
+  const rawInput = entry.input_modalities
+    ?? (Array.isArray(entry.modalities) ? entry.modalities : undefined)
+    ?? entry.modalities?.input
+    ?? entry.architecture?.input_modalities;
+  signal.input = toHarnessModalities(rawInput ?? (typeof entry.modalities === "string" ? entry.modalities.split(/[+>]/) : undefined));
+
+  // ── 容量 ──
+  // 上下文窗口：不同网关的字段名差异很大，按优先级逐个试。
+  const contextCandidates = [
+    entry.context_length,
+    entry.context_window,
+    entry.contextWindow,
+    entry.max_context_length,
+    entry.max_model_len,
+    entry.max_input_tokens,
+    entry.top_provider?.context_length,
+  ];
+  for (const candidate of contextCandidates) {
+    const value = positiveInt(candidate);
+    if (value !== undefined) {
+      signal.contextLength = value;
+      break;
+    }
+  }
+  const outputCandidates = [
+    entry.max_completion_tokens,
+    entry.max_output_tokens,
+    entry.max_tokens,
+    entry.top_provider?.max_completion_tokens,
+  ];
+  for (const candidate of outputCandidates) {
+    const value = positiveInt(candidate);
+    if (value !== undefined) {
+      signal.maxTokens = value;
+      break;
+    }
+  }
 
   return signal;
 }
 
-/** 从探测到的档位名集合构造建议（网关层，最高置信度）。 */
+/**
+ * 从探测到的条目构造建议（网关层，最高置信度）。
+ *
+ * 档位与容量分开返回：端点可能只说了容量没说档位（或反之），
+ * 两者各自独立生效——`capacities` 即使在没有档位建议时也可以有值。
+ */
 export function suggestFromListing(route, model, entry) {
   const signal = analyzeListingEntry(entry);
-  if (signal.reasoning !== true) return undefined;
+  const capacities = capacitiesFromSignal(signal, "gateway");
+  if (signal.reasoning !== true) {
+    // 端点没说推理能力，但说了容量/模态：容量照给，档位留空不预填，
+    // 由 buildSuggestion 继续往知识库/外部目录要档位与容量。
+    return capacities === undefined
+      ? undefined
+      : { mode: "custom", weak: true, source: "gateway", confidence: "low", matched: typeof entry?.id === "string" ? entry.id : undefined, capacities, note: "仅容量" };
+  }
   const named = (signal.levels ?? []).filter((level) => THINKING_LEVELS.includes(level));
   const weak = named.length === 0;
   let levels = named;
@@ -495,11 +624,24 @@ export function suggestFromListing(route, model, entry) {
     weak,
     efforts,
     compat: inferCompat(route, { thinkingFormat: hint?.thinkingFormat ?? inferThinkingFormat(route) }),
+    capacities,
     source: "gateway",
     confidence: weak ? "low" : CONFIDENCE.gateway,
     matched: typeof entry?.id === "string" ? entry.id : undefined,
     note: `${signal.source ?? "listing"} · ${levels.join("/")}`,
   };
+}
+
+/** 把探测信号的容量/模态部分打包成 UI 可直接用的形状。 */
+export function capacitiesFromSignal(signal, source) {
+  if (signal === undefined || signal === null) return undefined;
+  const out = {};
+  if (signal.contextLength !== undefined) out.contextWindow = signal.contextLength;
+  if (signal.maxTokens !== undefined) out.maxTokens = signal.maxTokens;
+  if (signal.input !== undefined) out.input = signal.input;
+  if (Object.keys(out).length === 0) return undefined;
+  out.source = source;
+  return out;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -510,26 +652,48 @@ export function suggestFromListing(route, model, entry) {
 const EXTERNAL_RANK = Object.freeze({ openrouter: 0, litellm: 1, "models.dev": 2 });
 
 /**
+ * 合并同名条目的两份能力描述：档位按可信度取，"有值"优先于"没值"。
+ *
+ * 三个目录的字段完整度不一样（OpenRouter 几乎全有容量、LiteLLM 只有
+ * 一部分模型有模态标志），所以不能整条替换——那会丢掉另一份里的容量。
+ */
+function mergeExternalValue(previous, value) {
+  const rank = EXTERNAL_RANK[value.source] ?? 9;
+  const previousRank = EXTERNAL_RANK[previous.source] ?? 9;
+  const newer = rank < previousRank || (rank === previousRank && (value.levels?.length ?? 0) > (previous.levels?.length ?? 0));
+  const pick = (left, right) => {
+    const chosen = newer
+      ? (right !== undefined ? right : left)
+      : (left !== undefined ? left : right);
+    return chosen;
+  };
+  return {
+    source: newer ? value.source : previous.source,
+    levels: pick(previous.levels, value.levels),
+    mandatory: pick(previous.mandatory, value.mandatory),
+    defaultEffort: pick(previous.defaultEffort, value.defaultEffort),
+    contextWindow: pick(previous.contextWindow, value.contextWindow),
+    maxTokens: pick(previous.maxTokens, value.maxTokens),
+    input: pick(previous.input, value.input),
+  };
+}
+
+/**
  * 把三个外部目录统一成一张 `归一 id → 能力` 表。
  *
  * 同名条目可能来自多个 provider（厂商 + 一堆中转），`put` 按
  * {@link EXTERNAL_RANK} 取更可信的那个，而不是取"档位最多"的那个——
- * 后者会让某个中转的过度声明覆盖厂商真实能力。
+ * 后者会让某个中转的过度声明覆盖厂商真实能力。容量/模态按"有值优先"合并。
  */
 export function buildExternalIndex(catalogs) {
   const index = new Map();
   const put = (key, value) => {
     const normalized = normalizeId(key);
     if (normalized.length < 4) return; // 太短的名字不参与匹配，避免误伤
+    if (value.contextWindow === undefined && value.maxTokens === undefined && value.input === undefined
+      && (value.levels === undefined || value.levels.length === 0)) return; // 什么都不知道就不占位
     const previous = index.get(normalized);
-    if (previous === undefined) {
-      index.set(normalized, value);
-      return;
-    }
-    const rank = EXTERNAL_RANK[value.source] ?? 9;
-    const previousRank = EXTERNAL_RANK[previous.source] ?? 9;
-    if (rank < previousRank) index.set(normalized, value);
-    else if (rank === previousRank && (value.levels?.length ?? 0) > (previous.levels?.length ?? 0)) index.set(normalized, value);
+    index.set(normalized, previous === undefined ? value : mergeExternalValue(previous, value));
   };
 
   const openrouter = catalogs?.openrouter?.data;
@@ -545,6 +709,9 @@ export function buildExternalIndex(catalogs) {
         levels,
         mandatory: reasoning?.mandatory === true,
         defaultEffort: typeof reasoning?.default_effort === "string" ? reasoning.default_effort : undefined,
+        contextWindow: positiveInt(model.top_provider?.context_length) ?? positiveInt(model.context_length),
+        maxTokens: positiveInt(model.top_provider?.max_completion_tokens),
+        input: toHarnessModalities(model.architecture?.input_modalities),
       };
       put(model.id, value);
       if (typeof model.name === "string") put(model.name, value);
@@ -566,6 +733,9 @@ export function buildExternalIndex(catalogs) {
             ? (model.reasoning === true ? ["off", "high"] : undefined)
             : ["off", ...effortOption.values.map((item) => String(item).toLowerCase())],
           mandatory: false,
+          contextWindow: positiveInt(model.limit?.context),
+          maxTokens: positiveInt(model.limit?.output),
+          input: toHarnessModalities(model.modalities?.input),
         };
         put(model.id, value);
         if (typeof model.name === "string") put(model.name, value);
@@ -577,22 +747,29 @@ export function buildExternalIndex(catalogs) {
   if (litellm !== null && typeof litellm === "object") {
     for (const [id, model] of Object.entries(litellm)) {
       if (model === null || typeof model !== "object") continue;
-      if (model.supports_reasoning !== true) continue;
       let levels;
-      if (Array.isArray(model.reasoning_effort_levels)) {
-        levels = ["off", ...model.reasoning_effort_levels.map((item) => String(item).toLowerCase())];
-      } else {
-        levels = ["high"];
-        if (model.supports_none_reasoning_effort === true || model.supports_minimal_reasoning_effort === true) levels.unshift("off");
-        if (model.supports_low_reasoning_effort === true) levels.push("low");
-        if (model.supports_xhigh_reasoning_effort === true) levels.push("xhigh");
-        if (model.supports_max_reasoning_effort === true) levels.push("max");
+      if (model.supports_reasoning === true) {
+        if (Array.isArray(model.reasoning_effort_levels)) {
+          levels = ["off", ...model.reasoning_effort_levels.map((item) => String(item).toLowerCase())];
+        } else {
+          levels = ["high"];
+          if (model.supports_none_reasoning_effort === true || model.supports_minimal_reasoning_effort === true) levels.unshift("off");
+          if (model.supports_low_reasoning_effort === true) levels.push("low");
+          if (model.supports_xhigh_reasoning_effort === true) levels.push("xhigh");
+          if (model.supports_max_reasoning_effort === true) levels.push("max");
+        }
       }
+      // LiteLLM 用布尔标志描述模态；只认 vision→image，text 恒在。
+      let input;
+      if (model.supports_vision === true) input = ["text", "image"];
       const value = {
         source: "litellm",
         levels,
         mandatory: model.thinking_always_on === true,
         defaultEffort: typeof model.default_reasoning_effort === "string" ? model.default_reasoning_effort : undefined,
+        contextWindow: positiveInt(model.max_input_tokens),
+        maxTokens: positiveInt(model.max_output_tokens),
+        input,
       };
       put(id, value);
     }
@@ -641,9 +818,24 @@ export function suggestFromExternal(route, model, index) {
   const hit = matchExternalDetailed(index, model);
   if (hit === undefined) return undefined;
   const { key, value } = hit;
+  // 容量/模态：目录里有什么就用什么，知识库的家族值仅在目录没给时兜底。
+  const hint = familyHint(model);
+  const externalCapacities = capacitiesFromExternalValue(value, key);
+  const knowledgeCapacities = capacitiesFromKnowledge(model, hint);
+  const capacities = externalCapacities === undefined
+    ? knowledgeCapacities
+    : knowledgeCapacities === undefined
+      ? externalCapacities
+      : {
+          ...knowledgeCapacities,
+          ...externalCapacities,
+          contextWindow: externalCapacities.contextWindow ?? knowledgeCapacities.contextWindow,
+          maxTokens: externalCapacities.maxTokens ?? knowledgeCapacities.maxTokens,
+          input: externalCapacities.input ?? knowledgeCapacities.input,
+        };
+
   if (!Array.isArray(value.levels) || value.levels.length === 0) {
-    // 弱信号也要能落成一条可用的保守建议，否则 UI 没东西可预填。
-    const hint = familyHint(model);
+    // 弱信号（目录只说"能推理"，甚至只说容量）：给保守档位 + 已知容量。
     const conservative = ladderFromLevels(["off", "high"], offOverride(hint), route);
     if (conservative === undefined) return undefined;
     return {
@@ -651,6 +843,7 @@ export function suggestFromExternal(route, model, index) {
       weak: true,
       efforts: conservative,
       compat: inferCompat(route, { thinkingFormat: hint?.thinkingFormat ?? inferThinkingFormat(route) }),
+      capacities,
       source: "external",
       confidence: "low",
       matched: key,
@@ -660,7 +853,6 @@ export function suggestFromExternal(route, model, index) {
   let levels = value.levels.filter((level) => THINKING_LEVELS.includes(level));
   if (levels.length === 0) return undefined;
   if (value.mandatory === true) levels = levels.filter((level) => level !== "off");
-  const hint = familyHint(model);
   const efforts = ladderFromLevels(levels, offOverride(hint), route);
   if (efforts === undefined) return undefined;
   return {
@@ -668,11 +860,58 @@ export function suggestFromExternal(route, model, index) {
     efforts,
     compat: inferCompat(route, { thinkingFormat: hint?.thinkingFormat ?? inferThinkingFormat(route) }),
     input: hint?.input,
+    capacities,
     source: "external",
     confidence: CONFIDENCE.external,
     matched: key,
     note: `${value.source} · ${levels.join("/")}`,
   };
+}
+
+/** 外部目录条目 → 容量建议。 */
+function capacitiesFromExternalValue(value, key) {
+  const out = {};
+  if (value.contextWindow !== undefined) out.contextWindow = value.contextWindow;
+  if (value.maxTokens !== undefined) out.maxTokens = value.maxTokens;
+  if (value.input !== undefined) out.input = value.input;
+  if (Object.keys(out).length === 0) return undefined;
+  out.source = "external";
+  out.matched = key;
+  return out;
+}
+
+/** 内置知识库条目 → 容量建议（家族级，只做兜底）。 */
+function capacitiesFromKnowledge(model, hint) {
+  const entry = matchKnowledge(model);
+  if (entry === undefined) return undefined;
+  const out = {};
+  if (entry.contextWindow !== undefined) out.contextWindow = entry.contextWindow;
+  if (entry.maxTokens !== undefined) out.maxTokens = entry.maxTokens;
+  const input = entry.input ?? hint?.input;
+  if (input !== undefined) out.input = [...input];
+  if (Object.keys(out).length === 0) return undefined;
+  out.source = "knowledge";
+  out.matched = entry.id;
+  return out;
+}
+
+/**
+ * 单独给出一个模型的容量建议（不给档位时也要能填）。
+ * 供 host 的 suggest 路由与 UI 的"手写档位"路径复用。
+ */
+export function capacitySuggestionFor(route, model, externalIndex, listingEntry) {
+  if (listingEntry !== undefined) {
+    const fromGateway = capacitiesFromSignal(analyzeListingEntry(listingEntry), "gateway");
+    if (fromGateway !== undefined) return fromGateway;
+  }
+  if (externalIndex !== undefined && externalIndex.size > 0) {
+    const hit = matchExternalDetailed(externalIndex, model);
+    if (hit !== undefined) {
+      const fromExternal = capacitiesFromExternalValue(hit.value, hit.key);
+      if (fromExternal !== undefined) return fromExternal;
+    }
+  }
+  return capacitiesFromKnowledge(model, familyHint(model));
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -703,6 +942,7 @@ export function buildSuggestion(options) {
   if (fromExternal !== undefined && fromExternal.weak !== true) return fromExternal;
 
   const entry = matchKnowledge(model);
+  const knowledgeCapacities = capacitiesFromKnowledge(model, familyHint(model));
   if (entry !== undefined) {
     const levels = THINKING_LEVELS.filter((level) => Object.hasOwn(entry.efforts, level));
     const efforts = ladderFromLevels(levels, entry.efforts, route);
@@ -711,6 +951,7 @@ export function buildSuggestion(options) {
         mode: "custom",
         efforts,
         compat: inferCompat(route, { ...entry.compat, thinkingFormat: entry.compat?.thinkingFormat ?? inferThinkingFormat(route) }),
+        capacities: knowledgeCapacities,
         input: entry.input,
         source: "knowledge",
         confidence: CONFIDENCE.knowledge,
@@ -720,9 +961,28 @@ export function buildSuggestion(options) {
     }
   }
 
-  if (fromGateway !== undefined) return fromGateway;
-  if (fromExternal !== undefined) return fromExternal;
-  return undefined;
+  // 谁先说话谁先被采用，但"容量"与"档位"可以来自不同层：
+  // 典型场景是网关只报了 context_length，档位得靠知识库/目录。
+  const fallback = fromGateway ?? fromExternal;
+  if (fallback === undefined) {
+    if (knowledgeCapacities === undefined) return undefined;
+    return { mode: "custom", weak: true, source: "knowledge", confidence: "low", matched: entry?.id, capacities: knowledgeCapacities, note: "仅容量" };
+  }
+  if (fallback.capacities === undefined && knowledgeCapacities !== undefined) {
+    return { ...fallback, capacities: knowledgeCapacities };
+  }
+  // 档位层不懂的知识库容量/模态，按字段补齐（不覆盖已有值）。
+  if (knowledgeCapacities !== undefined && entry !== undefined) {
+    const merged = {
+      ...knowledgeCapacities,
+      ...fallback.capacities,
+      contextWindow: fallback.capacities?.contextWindow ?? knowledgeCapacities.contextWindow,
+      maxTokens: fallback.capacities?.maxTokens ?? knowledgeCapacities.maxTokens,
+      input: fallback.capacities?.input ?? knowledgeCapacities.input,
+    };
+    return { ...fallback, capacities: merged };
+  }
+  return fallback;
 }
 
 /**

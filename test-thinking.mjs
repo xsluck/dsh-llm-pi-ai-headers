@@ -7,6 +7,8 @@ import assert from "node:assert/strict";
 import {
   THINKING_LEVELS,
   analyzeListingEntry,
+  capacitySuggestionFor,
+  toHarnessModalities,
   buildExternalIndex,
   buildSuggestion,
   describeEfforts,
@@ -200,6 +202,77 @@ test("空串被拒", () => assert.equal(isSendableLadder({ high: "" }), false));
 test("只有 off 被拒（官方要求至少一个思考档）", () => assert.equal(isSendableLadder({ off: "none" }), false));
 test("未知档位名被拒", () => assert.equal(isSendableLadder({ ultra: "ultra" }), false));
 test("档位全集与官方一致", () => assert.deepEqual(THINKING_LEVELS, ["off", "minimal", "low", "medium", "high", "xhigh", "max"]));
+
+console.log("容量与支持类型（contextWindow / maxTokens / input）");
+test("harness 词表收敛：video/pdf 只保留 image", () => {
+  assert.deepEqual(toHarnessModalities(["text", "image", "video", "pdf"]), ["text", "image"]);
+  assert.deepEqual(toHarnessModalities(["text"]), ["text"]);
+  assert.equal(toHarnessModalities(["audio"]), undefined);
+  assert.equal(toHarnessModalities([]), undefined);
+});
+test("网关条目读 context_length（bc 网关实测字段）", () => {
+  const signal = analyzeListingEntry({ id: "MiniMax-M3", object: "model", owned_by: "gateway", context_length: 1048576 });
+  assert.equal(signal.contextLength, 1048576);
+  assert.equal(signal.maxTokens, undefined);
+});
+test("网关条目读 OpenRouter 式容量与模态", () => {
+  const signal = analyzeListingEntry({
+    id: "x",
+    context_length: 1048576,
+    top_provider: { context_length: 1048576, max_completion_tokens: 131072 },
+    architecture: { input_modalities: ["text", "image", "video"] },
+  });
+  assert.equal(signal.contextLength, 1048576);
+  assert.equal(signal.maxTokens, 131072);
+  assert.deepEqual(signal.input, ["text", "image"]);
+});
+test("只说容量不说推理时也给容量建议（档位不预填）", () => {
+  const suggestion = buildSuggestion({
+    route: ROUTE_LOCAL,
+    model: { id: "unknown-model-1" },
+    listingEntry: { id: "unknown-model-1", context_length: 262144 },
+  });
+  assert.equal(suggestion.source, "gateway");
+  assert.equal(suggestion.capacities.contextWindow, 262144);
+  // 端点没提推理能力：容量照给，但档位绝不猜（efforts 留空 → UI 不预填档位）
+  assert.equal(suggestion.efforts, undefined);
+});
+test("外部目录带容量：models.dev limit", () => {
+  const index = buildExternalIndex({
+    modelsDev: { deepinfra: { models: { "Qwen/Qwen3.8-27B": { id: "Qwen/Qwen3.8-27B", limit: { context: 262144, output: 65536 }, modalities: { input: ["text", "image"] } } } } },
+  });
+  const suggestion = suggestFromExternal(ROUTE_LOCAL, { id: "qwen3.8-27b" }, index);
+  assert.equal(suggestion.capacities.contextWindow, 262144);
+  assert.equal(suggestion.capacities.maxTokens, 65536);
+  assert.deepEqual(suggestion.capacities.input, ["text", "image"]);
+  assert.equal(suggestion.capacities.source, "external");
+});
+test("同名条目的容量与档位跨源合并（不整条覆盖）", () => {
+  const index = buildExternalIndex({
+    openrouter: { data: [{ id: "mix-model-9", context_length: 100, top_provider: { max_completion_tokens: 10 }, reasoning: { supported_efforts: ["high"] } }] },
+    litellm: { "mix-model-9": { max_input_tokens: 200, supports_vision: true } },
+  });
+  const hit = index.get("mix model 9");
+  assert.equal(hit.contextWindow, 100); // openrouter 排名更高
+  assert.equal(hit.input[1], "image");   // 模态只有 litellm 给了
+});
+test("知识库兜底容量：无外部命中时用家族值", () => {
+  const suggestion = buildSuggestion({ route: ROUTE_LOCAL, model: { id: "k3" }, externalIndex: new Map() });
+  assert.equal(suggestion.source, "knowledge");
+  assert.equal(suggestion.capacities.contextWindow, 1048576);
+  assert.deepEqual(suggestion.capacities.input, ["text"]);
+});
+test("容量建议优先级：网关 > 外部 > 知识库", () => {
+  const index = buildExternalIndex({ modelsDev: { p: { models: { "deepseek v4 1 flash": { id: "deepseek-v4.1-flash", limit: { context: 999 } } } } } });
+  const fromGateway = capacitySuggestionFor(ROUTE_LOCAL, { id: "deepseek-v4.1-flash" }, index, { id: "deepseek-v4.1-flash", context_length: 111 });
+  assert.equal(fromGateway.contextWindow, 111);
+  assert.equal(fromGateway.source, "gateway");
+  const fromExternal = capacitySuggestionFor(ROUTE_LOCAL, { id: "deepseek-v4.1-flash" }, index, undefined);
+  assert.equal(fromExternal.contextWindow, 999);
+  assert.equal(fromExternal.source, "external");
+  const fromKnowledge = capacitySuggestionFor(ROUTE_LOCAL, { id: "k3" }, new Map(), undefined);
+  assert.equal(fromKnowledge.source, "knowledge");
+});
 
 if (process.exitCode === undefined) console.log("\ntest-thinking: 全部 " + passed + " 项通过");
 else console.error("\ntest-thinking: 有失败项");
